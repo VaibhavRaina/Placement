@@ -20,7 +20,7 @@ export function Profile() {
     const fetchProfile = async () => {
       try {
         const response = await authAPI.getCurrentUser();
-        setProfileData(response.data.user);
+        setProfileData(response.data.user ?? null);
       } catch (error) {
         console.error('Error fetching profile:', error);
         toast.error('Failed to load profile');

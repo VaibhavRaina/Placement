@@ -116,7 +116,7 @@ export function Analytics() {
             <div className="space-y-4">
               {statistics.jobTypeStats.map((stat, index) => {
                 const jobTypeColor = getJobTypeColor(stat._id as JobType);
-                const total = statistics.jobTypeStats.reduce((sum, s) => sum + s.count, 0);
+                const total = statistics.jobTypeStats?.reduce((sum, s) => sum + s.count, 0) ?? 0;
                 return (
                   <div key={index} className="flex items-center">
                     <div className="w-48 text-sm text-gray-600">{stat._id}</div>
