@@ -4,10 +4,14 @@ import { Input } from '../ui/Input';
 import { BRANCHES, Branch, JOB_TYPES, JobType } from '../../types';
 import toast from 'react-hot-toast';
 import { noticeAPI } from '../../lib/api';
+import { Check, X } from 'lucide-react';
 
 // Package unit and frequency options
 const PACKAGE_UNITS = ['LPA', 'K'];
 const PACKAGE_FREQUENCIES = ['Monthly', 'Yearly'];
+
+// All available semesters
+const ALL_SEMESTERS = [1, 2, 3, 4, 5, 6, 7, 8];
 
 export function PlacementNews() {
   const [isLoading, setIsLoading] = useState(false);
@@ -96,6 +100,34 @@ export function PlacementNews() {
       targetBranches: prev.targetBranches.includes(branch)
         ? prev.targetBranches.filter(b => b !== branch)
         : [...prev.targetBranches, branch],
+    }));
+  };
+
+  const selectAllSemesters = () => {
+    setFormData(prev => ({
+      ...prev,
+      targetSemesters: [...ALL_SEMESTERS]
+    }));
+  };
+
+  const clearAllSemesters = () => {
+    setFormData(prev => ({
+      ...prev,
+      targetSemesters: []
+    }));
+  };
+
+  const selectAllBranches = () => {
+    setFormData(prev => ({
+      ...prev,
+      targetBranches: [...BRANCHES as Branch[]]
+    }));
+  };
+
+  const clearAllBranches = () => {
+    setFormData(prev => ({
+      ...prev,
+      targetBranches: []
     }));
   };
 
@@ -201,35 +233,136 @@ export function PlacementNews() {
           />
         </div>
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Target Semesters</label>
+        <div className="border rounded-lg p-4">
+          <div className="flex justify-between items-center mb-3">
+            <label className="block text-sm font-medium text-gray-700">
+              Target Semesters <span className="text-blue-600">({formData.targetSemesters.length} selected)</span>
+            </label>
+            <div className="flex gap-2">
+              <Button 
+                type="button" 
+                size="sm" 
+                onClick={selectAllSemesters} 
+                disabled={isLoading || formData.targetSemesters.length === ALL_SEMESTERS.length}
+              >
+                Select All
+              </Button>
+              <Button 
+                type="button" 
+                size="sm" 
+                variant="outline" 
+                onClick={clearAllSemesters} 
+                disabled={isLoading || formData.targetSemesters.length === 0}
+              >
+                Clear All
+              </Button>
+            </div>
+          </div>
+          
+          {formData.targetSemesters.length > 0 && (
+            <div className="mb-3 p-2 bg-gray-50 rounded-md">
+              <p className="text-sm text-gray-700 mb-1">Selected semesters:</p>
+              <div className="flex flex-wrap gap-1">
+                {formData.targetSemesters
+                  .sort((a, b) => a - b)
+                  .map(semester => (
+                    <span 
+                      key={semester} 
+                      className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
+                    >
+                      Sem {semester}
+                      <X 
+                        className="h-3 w-3 ml-1 cursor-pointer" 
+                        onClick={() => handleSemesterToggle(semester)} 
+                      />
+                    </span>
+                  ))
+                }
+              </div>
+            </div>
+          )}
+          
           <div className="flex flex-wrap gap-2">
-            {[1, 2, 3, 4, 5, 6, 7, 8].map((semester) => (
+            {ALL_SEMESTERS.map((semester) => (
               <Button
                 key={semester}
                 type="button"
                 variant={formData.targetSemesters.includes(semester) ? 'primary' : 'outline'}
+                size="sm"
                 onClick={() => handleSemesterToggle(semester)}
                 disabled={isLoading}
+                className={formData.targetSemesters.includes(semester) ? 'relative' : ''}
               >
                 Sem {semester}
+                {formData.targetSemesters.includes(semester) && (
+                  <Check className="h-3 w-3 absolute top-1 right-1" />
+                )}
               </Button>
             ))}
           </div>
         </div>
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Target Branches</label>
-          <div className="flex flex-wrap gap-2">
+        <div className="border rounded-lg p-4">
+          <div className="flex justify-between items-center mb-3">
+            <label className="block text-sm font-medium text-gray-700">
+              Target Branches <span className="text-blue-600">({formData.targetBranches.length} selected)</span>
+            </label>
+            <div className="flex gap-2">
+              <Button 
+                type="button" 
+                size="sm" 
+                onClick={selectAllBranches} 
+                disabled={isLoading || formData.targetBranches.length === BRANCHES.length}
+              >
+                Select All
+              </Button>
+              <Button 
+                type="button" 
+                size="sm" 
+                variant="outline" 
+                onClick={clearAllBranches} 
+                disabled={isLoading || formData.targetBranches.length === 0}
+              >
+                Clear All
+              </Button>
+            </div>
+          </div>
+          
+          {formData.targetBranches.length > 0 && (
+            <div className="mb-3 p-2 bg-gray-50 rounded-md">
+              <p className="text-sm text-gray-700 mb-1">Selected branches:</p>
+              <div className="flex flex-wrap gap-1">
+                {formData.targetBranches.map(branch => (
+                  <span 
+                    key={branch} 
+                    className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
+                  >
+                    {branch}
+                    <X 
+                      className="h-3 w-3 ml-1 cursor-pointer" 
+                      onClick={() => handleBranchToggle(branch)} 
+                    />
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
             {BRANCHES.map((branch) => (
               <Button
                 key={branch}
                 type="button"
                 variant={formData.targetBranches.includes(branch as Branch) ? 'primary' : 'outline'}
+                size="sm"
                 onClick={() => handleBranchToggle(branch as Branch)}
                 disabled={isLoading}
+                className={formData.targetBranches.includes(branch as Branch) ? 'relative' : ''}
               >
                 {branch}
+                {formData.targetBranches.includes(branch as Branch) && (
+                  <Check className="h-3 w-3 absolute top-1 right-1" />
+                )}
               </Button>
             ))}
           </div>
