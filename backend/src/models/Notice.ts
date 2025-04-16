@@ -17,6 +17,8 @@ export interface INotice extends Document {
   targetSemesters: number[];
   targetBranches: Branch[];
   targetYear: number;
+  minCGPA: number; // Minimum CGPA required
+  maxCGPA?: number; // Optional maximum CGPA for range filtering
   packageOffered: string; // In lakhs per annum (LPA)
   jobType: JobType;
   createdAt: Date;
@@ -57,6 +59,19 @@ const NoticeSchema = new Schema<INotice>(
     targetYear: {
       type: Number,
       required: true,
+    },
+    minCGPA: { // Added minCGPA field
+      type: Number,
+      required: true,
+      min: 0,
+      max: 10,
+      default: 0, // Default minimum CGPA is 0
+    },
+    maxCGPA: { // Added maxCGPA field
+      type: Number,
+      min: 0,
+      max: 10,
+      default: 10, // Default maximum CGPA is 10 (no upper limit unless specified)
     },
     packageOffered: {
       type: String,

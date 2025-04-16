@@ -1,0 +1,19 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: placement-frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: placement-frontend
+  template:
+    metadata:
+      labels:
+        app: placement-frontend
+    spec:
+      containers:
+      - name: placement-frontend
+        image: ${DOCKERHUB_CREDENTIALS_USR}/placement-frontend:${BUILD_NUMBER}
+        ports:
+        - containerPort: 80

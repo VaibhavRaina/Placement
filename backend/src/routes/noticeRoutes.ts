@@ -1,8 +1,17 @@
 import express from 'express';
-import { createNotice, getStudentNotices, getAllNotices, deleteNotice } from '../controllers/noticeController';
+import { 
+  createNotice, 
+  getStudentNotices, 
+  getAllNotices, 
+  deleteNotice,
+  getVisitedCompanies // Import the new controller function
+} from '../controllers/noticeController';
 import { protect, adminOnly, studentOnly } from '../middleware/auth';
 
 const router = express.Router();
+
+// Public route to get visited companies (adjust middleware if needed)
+router.get('/companies', getVisitedCompanies);
 
 // Protect all routes
 router.use(protect);

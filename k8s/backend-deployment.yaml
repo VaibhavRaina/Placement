@@ -1,0 +1,19 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: placement-backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: placement-backend
+  template:
+    metadata:
+      labels:
+        app: placement-backend
+    spec:
+      containers:
+      - name: placement-backend
+        image: ${DOCKERHUB_CREDENTIALS_USR}/placement-backend:${BUILD_NUMBER}
+        ports:
+        - containerPort: 3000

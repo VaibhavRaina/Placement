@@ -22,12 +22,15 @@ export enum JobType {
 
 export interface User {
   id: string;
+  name?: string;
+  dob?: string; // Date of birth stored as string in frontend
   usn?: string;
   email: string;
   role: UserRole;
   semester?: number;
   branch?: Branch;
   year?: number;
+  cgpa?: number;
   placementStatus?: 'Not Placed' | 'Placed';
   placedCompany?: string | null;
   username?: string;
@@ -41,6 +44,8 @@ export interface Notice {
   targetSemesters: number[];
   targetBranches: string[];
   targetYear: number;
+  minCGPA: number;
+  maxCGPA?: number;
   packageOffered: string;
   jobType: JobType;
   createdAt: string;
@@ -53,6 +58,8 @@ export interface LoginCredentials {
 }
 
 export interface RegisterData {
+  name: string;
+  dob: string;
   usn: string;
   email: string;
   password: string;
@@ -80,6 +87,8 @@ export interface NoticeData {
   targetYear: number;
   packageOffered: string;
   jobType: JobType;
+  minCGPA?: number; // Added optional minCGPA
+  maxCGPA?: number; // Added optional maxCGPA
 }
 
 export interface PlacementStatistics {

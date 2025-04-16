@@ -1,6 +1,6 @@
 import { Routes, Route } from 'react-router-dom';
 import { Navbar } from '../../components/student/Navbar';
-import { Profile } from '../../components/student/Profile';
+import Profile from '../../components/student/Profile';
 import { PlacementOffers } from '../../components/student/PlacementOffers';
 import { useAuth } from '../../context/AuthContext';
 

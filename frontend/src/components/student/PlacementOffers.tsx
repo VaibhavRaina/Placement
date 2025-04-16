@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { ExternalLink, Loader, Briefcase, DollarSign } from 'lucide-react';
-import { Button } from '../ui/Button';
 import { noticeAPI } from '../../lib/api';
 import { Notice } from '../../types';
 import toast from 'react-hot-toast';

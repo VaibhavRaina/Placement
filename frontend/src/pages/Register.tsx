@@ -10,6 +10,8 @@ import { authAPI } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 
 interface FormData {
+  name: string;
+  dob: string;
   usn: string;
   email: string;
   password: string;
@@ -19,6 +21,8 @@ interface FormData {
 }
 
 interface FormErrors {
+  name?: string;
+  dob?: string;
   usn?: string;
   email?: string;
   password?: string;
@@ -31,6 +35,8 @@ export default function Register() {
   const { login } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
   const [formData, setFormData] = useState<FormData>({
+    name: '',
+    dob: '',
     usn: '',
     email: '',
     password: '',
@@ -42,6 +48,16 @@ export default function Register() {
 
   const validateForm = (): boolean => {
     const newErrors: FormErrors = {};
+
+    // Name validation
+    if (!formData.name.trim()) {
+      newErrors.name = 'Name is required';
+    }
+
+    // Date of birth validation
+    if (!formData.dob) {
+      newErrors.dob = 'Date of birth is required';
+    }
 
     // USN validation
     if (!validateUSN(formData.usn)) {
@@ -86,6 +102,8 @@ export default function Register() {
     try {
       // Call backend API to register user
       const response = await authAPI.register({
+        name: formData.name.trim(),
+        dob: formData.dob,
         usn: formData.usn.toUpperCase(),
         email: formData.email.toLowerCase(),
         password: formData.password,
@@ -136,6 +154,41 @@ export default function Register() {
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
         <div className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10">
           <form className="space-y-6" onSubmit={handleSubmit}>
+            <div>
+              <label htmlFor="name" className="block text-sm font-medium text-gray-700">
+                Full Name
+              </label>
+              <div className="mt-1">
+                <Input
+                  id="name"
+                  name="name"
+                  type="text"
+                  required
+                  value={formData.name}
+                  onChange={handleChange}
+                  error={errors.name}
+                  placeholder="Your full name"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label htmlFor="dob" className="block text-sm font-medium text-gray-700">
+                Date of Birth
+              </label>
+              <div className="mt-1">
+                <Input
+                  id="dob"
+                  name="dob"
+                  type="date"
+                  required
+                  value={formData.dob}
+                  onChange={handleChange}
+                  error={errors.dob}
+                />
+              </div>
+            </div>
+
             <div>
               <label htmlFor="usn" className="block text-sm font-medium text-gray-700">
                 USN

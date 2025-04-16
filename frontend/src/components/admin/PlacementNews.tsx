@@ -25,7 +25,9 @@ export function PlacementNews() {
     packageAmount: '',
     packageUnit: 'LPA',
     packageFrequency: 'Yearly',
-    jobType: JobType.FULLTIME
+    jobType: JobType.FULLTIME,
+    minCGPA: '',
+    maxCGPA: ''
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -38,6 +40,17 @@ export function PlacementNews() {
 
     if (formData.targetSemesters.length === 0 || formData.targetBranches.length === 0) {
       toast.error('Please select target semesters and branches');
+      return;
+    }
+
+    // Validate CGPA range
+    const minCgpaNum = parseFloat(formData.minCGPA);
+    const maxCgpaNum = parseFloat(formData.maxCGPA);
+
+    if ((formData.minCGPA && (isNaN(minCgpaNum) || minCgpaNum < 0 || minCgpaNum > 10)) ||
+        (formData.maxCGPA && (isNaN(maxCgpaNum) || maxCgpaNum < 0 || maxCgpaNum > 10)) ||
+        (formData.minCGPA && formData.maxCGPA && minCgpaNum > maxCgpaNum)) {
+      toast.error('Invalid CGPA range. Values must be between 0 and 10, and Min cannot exceed Max.');
       return;
     }
 
@@ -58,7 +71,9 @@ export function PlacementNews() {
         targetBranches: formData.targetBranches,
         targetYear: formData.targetYear,
         packageOffered: packageOffered,
-        jobType: formData.jobType
+        jobType: formData.jobType,
+        minCGPA: formData.minCGPA ? minCgpaNum : undefined,
+        maxCGPA: formData.maxCGPA ? maxCgpaNum : undefined
       });
       
       toast.success('Placement notice sent successfully');
@@ -74,7 +89,9 @@ export function PlacementNews() {
         packageAmount: '',
         packageUnit: 'LPA',
         packageFrequency: 'Yearly',
-        jobType: JobType.FULLTIME
+        jobType: JobType.FULLTIME,
+        minCGPA: '',
+        maxCGPA: ''
       });
     } catch (error: any) {
       console.error('Error creating notice:', error);
@@ -208,6 +225,39 @@ export function PlacementNews() {
               </option>
             ))}
           </select>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">CGPA Criteria (Optional)</label>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Input
+                type="text"
+                placeholder="Min CGPA (e.g., 6.5)"
+                value={formData.minCGPA}
+                onChange={(e) => setFormData(prev => ({
+                  ...prev,
+                  minCGPA: e.target.value.replace(/[^\d.]/g, '') // Allow only numbers and dot
+                }))}
+                disabled={isLoading}
+              />
+            </div>
+            <div>
+              <Input
+                type="text"
+                placeholder="Max CGPA (e.g., 8.0)"
+                value={formData.maxCGPA}
+                onChange={(e) => setFormData(prev => ({
+                  ...prev,
+                  maxCGPA: e.target.value.replace(/[^\d.]/g, '') // Allow only numbers and dot
+                }))}
+                disabled={isLoading}
+              />
+            </div>
+          </div>
+          <p className="mt-1 text-xs text-gray-500">
+            Leave blank if no specific CGPA range is required.
+          </p>
         </div>
 
         <div>

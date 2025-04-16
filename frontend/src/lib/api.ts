@@ -99,8 +99,20 @@ export const studentAPI = {
   getStudentByUSN: (usn: string) => 
     api.get<UserResponse>(`/students/${usn}`),
     
-  updatePlacementStatus: (usn: string, statusData: PlacementStatusUpdate) => 
-    api.put<UserResponse>(`/students/${usn}/placement-status`, statusData),
+  updatePlacementStatus: (usn: string, data: PlacementStatusUpdate) => 
+    api.put<UserResponse>(`/students/${usn}/placement-status`, data),
+    
+  updateStudentProfile: (data: { name?: string; semester?: number; cgpa?: number }) => 
+    api.put<UserResponse>('/students/profile', data),
+    
+  updateStudentDetailsByAdmin: (usn: string, data: { 
+    name?: string; 
+    semester?: number; 
+    cgpa?: number; 
+    placementStatus?: 'Placed' | 'Not Placed';
+    placedCompany?: string;
+  }) => 
+    api.put<UserResponse>(`/students/${usn}/update`, data),
     
   getPlacementStatistics: () => 
     api.get<StatisticsResponse>('/students/statistics'),
@@ -114,11 +126,18 @@ export const noticeAPI = {
   getStudentNotices: () => 
     api.get<NoticesResponse>('/notices/student'),
     
+  // Updated signature to include minCGPA and maxCGPA in NoticeData
   createNotice: (noticeData: NoticeData) => 
     api.post<{ success: boolean; notice: Notice }>('/notices', noticeData),
     
   deleteNotice: (id: string) => 
     api.delete<MessageResponse>(`/notices/${id}`),
+};
+
+// Fetch all unique company names that have posted notices
+export const getVisitedCompanies = async () => {
+  const response = await api.get('/notices/companies');
+  return response.data;
 };
 
 export default api;

@@ -15,7 +15,7 @@ const generateToken = (id: string, role: UserRole): string => {
 // @access  Public
 export const registerStudent = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { usn, email, password, semester, branch } = req.body;
+    const { usn, email, password, semester, branch, name, cgpa, dob } = req.body;
 
     // Validate USN format
     if (!/^[0-9][a-zA-Z]{2}[0-9]{2}[a-zA-Z]{2}[0-9]{3}$/.test(usn)) {
@@ -61,19 +61,20 @@ export const registerStudent = async (req: Request, res: Response): Promise<void
         message: 'Email is already in use',
       });
       return;
-    }
-
-    // Extract year from USN
+    }    // Extract year from USN
     const yearCode = usn.substring(3, 5);
     const year = 2000 + parseInt(yearCode);
-
+    
     // Create student
     const student = await User.create({
+      name,
+      dob: dob ? new Date(dob) : undefined,
       usn,
       email,
       password,
       semester,
       branch,
+      cgpa: cgpa || 0,
       role: UserRole.STUDENT,
       year,
       placementStatus: 'Not Placed',
@@ -85,14 +86,16 @@ export const registerStudent = async (req: Request, res: Response): Promise<void
 
       res.status(201).json({
         success: true,
-        user: {
-          id: student._id,
+        user: {          id: student._id,
+          name: student.name,
+          dob: student.dob,
           usn: student.usn,
           email: student.email,
           role: student.role,
           semester: student.semester,
           branch: student.branch,
           year: student.year,
+          cgpa: student.cgpa,
           placementStatus: student.placementStatus,
           placedCompany: student.placedCompany,
         },

@@ -107,11 +107,14 @@ export const updatePlacementStatus = async (req: Request, res: Response): Promis
       message: `Student ${usn} has been marked as ${placementStatus}${placementStatus === 'Placed' ? ` in ${placedCompany}` : ''}`,
       student: {
         id: student._id,
+        name: student.name,
         usn: student.usn,
         email: student.email,
         semester: student.semester,
         branch: student.branch,
         year: student.year,
+        cgpa: student.cgpa,
+        dob: student.dob,
         placementStatus: student.placementStatus,
         placedCompany: student.placedCompany,
       }
@@ -191,6 +194,175 @@ export const getPlacementStatistics = async (req: Request, res: Response): Promi
     });
   } catch (error: any) {
     console.error('Get placement statistics error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server Error',
+      error: error.message
+    });
+  }
+};
+
+// @desc    Update student profile by the student
+// @route   PUT /api/students/profile
+// @access  Private/Student
+export const updateStudentProfile = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const student = req.user as IUser;
+    const { name, semester, cgpa, dob } = req.body;
+
+    // Validate semester if provided
+    if (semester !== undefined) {
+      const semesterNum = parseInt(String(semester));
+      if (isNaN(semesterNum) || semesterNum < 1 || semesterNum > 8) {
+        res.status(400).json({
+          success: false,
+          message: 'Semester must be between 1 and 8'
+        });
+        return;
+      }
+    }
+
+    // Validate CGPA if provided
+    if (cgpa !== undefined) {
+      const cgpaNum = parseFloat(String(cgpa));
+      if (isNaN(cgpaNum) || cgpaNum < 0 || cgpaNum > 10) {
+        res.status(400).json({
+          success: false,
+          message: 'CGPA must be between 0 and 10'
+        });
+        return;
+      }
+    }
+
+    // Update student profile
+    const updatedStudent = await User.findByIdAndUpdate(
+      student._id,
+      {
+        $set: {
+          ...(name && { name }),
+          ...(semester && { semester: parseInt(String(semester)) }),
+          ...(cgpa && { cgpa: parseFloat(String(cgpa)) }),
+          ...(dob && { dob: new Date(dob) })
+        }
+      },
+      { new: true, runValidators: true }
+    ).select('-password');
+
+    if (!updatedStudent) {
+      res.status(404).json({
+        success: false,
+        message: 'Student not found'
+      });
+      return;
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Profile updated successfully',
+      user: updatedStudent
+    });
+  } catch (error: any) {
+    console.error('Update student profile error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server Error',
+      error: error.message
+    });
+  }
+};
+
+// @desc    Update student details by admin
+// @route   PUT /api/students/:usn/update
+// @access  Private/Admin
+export const updateStudentDetailsByAdmin = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { usn } = req.params;
+    const { 
+      name, 
+      semester, 
+      cgpa, 
+      dob,
+      placementStatus, 
+      placedCompany 
+    } = req.body;
+
+    // Validate semester if provided
+    if (semester !== undefined) {
+      const semesterNum = parseInt(String(semester));
+      if (isNaN(semesterNum) || semesterNum < 1 || semesterNum > 8) {
+        res.status(400).json({
+          success: false,
+          message: 'Semester must be between 1 and 8'
+        });
+        return;
+      }
+    }
+
+    // Validate CGPA if provided
+    if (cgpa !== undefined) {
+      const cgpaNum = parseFloat(String(cgpa));
+      if (isNaN(cgpaNum) || cgpaNum < 0 || cgpaNum > 10) {
+        res.status(400).json({
+          success: false,
+          message: 'CGPA must be between 0 and 10'
+        });
+        return;
+      }
+    }
+
+    // Validate placement status if provided
+    if (placementStatus !== undefined && 
+        placementStatus !== 'Placed' && 
+        placementStatus !== 'Not Placed') {
+      res.status(400).json({
+        success: false,
+        message: 'Invalid placement status. Must be "Placed" or "Not Placed".'
+      });
+      return;
+    }
+
+    // If status is "Placed", company name is required
+    if (placementStatus === 'Placed' && !placedCompany) {
+      res.status(400).json({
+        success: false,
+        message: 'Company name is required when marking a student as placed'
+      });
+      return;
+    }
+
+    // Create update object
+    const updateData: any = {};
+    if (name) updateData.name = name;
+    if (semester) updateData.semester = parseInt(String(semester));
+    if (cgpa) updateData.cgpa = parseFloat(String(cgpa));
+    if (dob) updateData.dob = new Date(dob);
+    if (placementStatus) {
+      updateData.placementStatus = placementStatus;
+      updateData.placedCompany = placementStatus === 'Placed' ? placedCompany : null;
+    }
+
+    // Update student
+    const student = await User.findOneAndUpdate(
+      { usn: usn.toUpperCase(), role: UserRole.STUDENT },
+      { $set: updateData },
+      { new: true, runValidators: true }
+    ).select('-password');
+
+    if (!student) {
+      res.status(404).json({
+        success: false,
+        message: 'Student not found'
+      });
+      return;
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Student details updated successfully',
+      student
+    });
+  } catch (error: any) {
+    console.error('Update student details error:', error);
     res.status(500).json({
       success: false,
       message: 'Server Error',

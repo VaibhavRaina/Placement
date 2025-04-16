@@ -21,6 +21,8 @@ export enum Branch {
 // Interface for User document
 export interface IUser extends Document {
   _id: Types.ObjectId;
+  name?: string; // Student's full name
+  dob?: Date; // Student's date of birth
   usn?: string; // Only for students
   email: string;
   password: string;
@@ -28,6 +30,7 @@ export interface IUser extends Document {
   semester?: number; // Only for students
   branch?: Branch; // Only for students
   year?: number; // Derived from USN for students
+  cgpa?: number; // Student's CGPA
   placementStatus?: 'Not Placed' | 'Placed'; // Only for students
   placedCompany?: string | null; // Only for students
   username?: string; // Only for admin
@@ -36,7 +39,13 @@ export interface IUser extends Document {
 
 // Create the User Schema
 const UserSchema = new Schema<IUser>(
-  {
+  {    name: {
+      type: String,
+      trim: true,
+    },
+    dob: {
+      type: Date,
+    },
     usn: {
       type: String,
       unique: true,
@@ -91,6 +100,11 @@ const UserSchema = new Schema<IUser>(
     },
     year: {
       type: Number,
+    },
+    cgpa: {
+      type: Number,
+      min: 0,
+      max: 10,
     },
     placementStatus: {
       type: String,
