@@ -1,15 +1,14 @@
 pipeline {
   agent any
 
-  environment {
-    // SonarQube: configure these credentials in Jenkins Global Credentials
+  environment {    // SonarQube: configure these credentials in Jenkins Global Credentials
     SONAR_TOKEN = credentials('sonarqube-token')
     DOCKERHUB_CREDENTIALS = credentials('dockerhub-creds')
     SLACK_WEBHOOK_URL = credentials('slack-webhook-url')
     GCP_CREDENTIALS = credentials('gcp-service-account-key')  // GCP service account JSON key
-    GCP_PROJECT_ID = 'your-gcp-project-id'                    // GCP project ID
-    GCP_REGION = 'us-central1'                                 // Default GCP region
-    CLUSTER_NAME = 'placement-cluster'                         // GKE cluster name
+    GCP_PROJECT_ID = 'avid-sunset-435316-a6'                  // GCP project ID
+    GCP_REGION = 'us-central1'                                // Default GCP region
+    CLUSTER_NAME = 'placement-cluster'                        // GKE cluster name
   }
 
   stages {
@@ -134,10 +133,12 @@ pipeline {
         dir('infrastructure') {
           // authenticate gcloud
           sh 'echo "$GCP_CREDENTIALS" > gcp-key.json'
-          sh 'gcloud auth activate-service-account --key-file=gcp-key.json'
-          sh 'gcloud container clusters get-credentials $CLUSTER_NAME --region $GCP_REGION --project $GCP_PROJECT_ID'
+          sh 'gcloud auth activate-service-account --key-file=gcp-key.json'          sh 'gcloud container clusters get-credentials $CLUSTER_NAME --region $GCP_REGION --project $GCP_PROJECT_ID'
         }
         dir('k8s') {
+          // Update image tags in deployment files
+          sh "sed -i 's|\\${DOCKERHUB_CREDENTIALS_USR}|$DOCKERHUB_CREDENTIALS_USR|g; s|\\${BUILD_NUMBER}|${env.BUILD_NUMBER}|g' backend-deployment.yaml"
+          sh "sed -i 's|\\${DOCKERHUB_CREDENTIALS_USR}|$DOCKERHUB_CREDENTIALS_USR|g; s|\\${BUILD_NUMBER}|${env.BUILD_NUMBER}|g' frontend-deployment.yaml"
           sh 'kubectl apply -f backend-deployment.yaml'
           sh 'kubectl apply -f backend-service.yaml'
           sh 'kubectl apply -f frontend-deployment.yaml'
