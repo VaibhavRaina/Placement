@@ -39,3 +39,26 @@ coverage/
 
 # Docker
 .dockerignore
+
+# Google Cloud SDK and tools
+y/
+google-cloud-sdk/
+.terraform/
+terraform.tfstate*
+terraform.tfplan
+
+# Temporary files
+*.tmp
+*.temp
+temp/
+tmp/
+
+# Backup files
+*.backup
+*.bak
+
+# Large binary files
+*.tar.gz
+*.zip
+*.dmg
+*.iso
