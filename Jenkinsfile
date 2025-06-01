@@ -1,159 +1,312 @@
 pipeline {
-  agent any
-
-  environment {    // SonarQube: configure these credentials in Jenkins Global Credentials
-    SONAR_TOKEN = credentials('sonarqube-token')
-    DOCKERHUB_CREDENTIALS = credentials('dockerhub-creds')
-    SLACK_WEBHOOK_URL = credentials('slack-webhook-url')
-    GCP_CREDENTIALS = credentials('gcp-service-account-key')  // GCP service account JSON key
-    GCP_PROJECT_ID = 'avid-sunset-435316-a6'                  // GCP project ID
-    GCP_REGION = 'us-central1'                                // Default GCP region
-    CLUSTER_NAME = 'placement-cluster'                        // GKE cluster name
-  }
-
-  stages {
-    stage('Checkout') {
-      steps {
-        checkout scm
-      }
+    agent any
+    
+    environment {
+        PROJECT_ID = 'avid-sunset-435316-a6'
+        CLUSTER_NAME = 'placement-cluster'
+        CLUSTER_ZONE = 'us-central1-a'
+        REGISTRY_HOSTNAME = 'gcr.io'
+        IMAGE_BACKEND = "${REGISTRY_HOSTNAME}/${PROJECT_ID}/placement-backend"
+        IMAGE_FRONTEND = "${REGISTRY_HOSTNAME}/${PROJECT_ID}/placement-frontend"
+        SONAR_HOST_URL = 'http://SONARQUBE_IP:9000'
+        KUBECONFIG = credentials('kubeconfig')
     }
-
-    stage('Install Dependencies') {
-      parallel {
-        stage('Backend') {
-          steps {
-            dir('backend') {
-              sh 'npm install'
-            }
-          }
-        }
-        stage('Frontend') {
-          steps {
-            dir('frontend') {
-              sh 'npm install'
-            }
-          }
-        }
-      }
+    
+    tools {
+        nodejs '18'
     }
-
-    stage('Unit Tests') {
-      parallel {
-        stage('Backend Tests') {
-          steps {
-            dir('backend') {
-              sh 'npm run test -- --coverage'
+    
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+                script {
+                    env.GIT_COMMIT_SHORT = sh(
+                        script: "git rev-parse --short HEAD",
+                        returnStdout: true
+                    ).trim()
+                }
             }
-          }
         }
-        stage('Frontend Tests') {
-          steps {
-            dir('frontend') {
-              sh 'npm run test -- --coverage'
+        
+        stage('Install Dependencies') {
+            parallel {
+                stage('Backend Dependencies') {
+                    steps {
+                        dir('backend') {
+                            sh 'npm ci'
+                        }
+                    }
+                }
+                stage('Frontend Dependencies') {
+                    steps {
+                        dir('frontend') {
+                            sh 'npm ci'
+                        }
+                    }
+                }
             }
-          }
         }
-      }
-      post {
+        
+        stage('Code Quality & Security') {
+            parallel {
+                stage('Backend Lint & Test') {
+                    steps {
+                        dir('backend') {
+                            sh 'npm run lint'
+                            sh 'npm run test:coverage'
+                            publishHTML([
+                                allowMissing: false,
+                                alwaysLinkToLastBuild: true,
+                                keepAll: true,
+                                reportDir: 'coverage',
+                                reportFiles: 'index.html',
+                                reportName: 'Backend Coverage Report'
+                            ])
+                        }
+                    }
+                }
+                
+                stage('Frontend Lint & Test') {
+                    steps {
+                        dir('frontend') {
+                            sh 'npm run lint'
+                            sh 'npm run test:coverage'
+                            publishHTML([
+                                allowMissing: false,
+                                alwaysLinkToLastBuild: true,
+                                keepAll: true,
+                                reportDir: 'coverage',
+                                reportFiles: 'index.html',
+                                reportName: 'Frontend Coverage Report'
+                            ])
+                        }
+                    }
+                }
+                
+                stage('SonarQube Analysis') {
+                    steps {
+                        script {
+                            def scannerHome = tool 'SonarQubeScanner'
+                            withSonarQubeEnv('SonarQube') {
+                                sh """
+                                    ${scannerHome}/bin/sonar-scanner \
+                                    -Dsonar.projectKey=placement-portal \
+                                    -Dsonar.sources=. \
+                                    -Dsonar.host.url=${SONAR_HOST_URL} \
+                                    -Dsonar.login=${SONAR_TOKEN} \
+                                    -Dsonar.exclusions=**/node_modules/**,**/coverage/**,**/*.test.js,**/*.spec.js
+                                """
+                            }
+                        }
+                    }
+                }
+                
+                stage('Security Scan') {
+                    steps {
+                        script {
+                            // Backend security scan
+                            dir('backend') {
+                                sh 'npm audit --audit-level=high'
+                            }
+                            // Frontend security scan
+                            dir('frontend') {
+                                sh 'npm audit --audit-level=high'
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        stage('Quality Gate') {
+            steps {
+                timeout(time: 10, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
+                }
+            }
+        }
+        
+        stage('Build Docker Images') {
+            parallel {
+                stage('Build Backend') {
+                    steps {
+                        dir('backend') {
+                            script {
+                                def image = docker.build("${IMAGE_BACKEND}:${env.GIT_COMMIT_SHORT}")
+                                docker.withRegistry("https://${REGISTRY_HOSTNAME}", 'gcr:service-account') {
+                                    image.push()
+                                    image.push('latest')
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                stage('Build Frontend') {
+                    steps {
+                        dir('frontend') {
+                            script {
+                                def image = docker.build("${IMAGE_FRONTEND}:${env.GIT_COMMIT_SHORT}")
+                                docker.withRegistry("https://${REGISTRY_HOSTNAME}", 'gcr:service-account') {
+                                    image.push()
+                                    image.push('latest')
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        stage('Security Scanning - Images') {
+            parallel {
+                stage('Backend Image Scan') {
+                    steps {
+                        script {
+                            sh """
+                                gcloud container images scan ${IMAGE_BACKEND}:${env.GIT_COMMIT_SHORT} \
+                                --format='table(vulnerability.effectiveSeverity,vulnerability.cvssScore,package.name,package.packageType,vulnerability.description)'
+                            """
+                        }
+                    }
+                }
+                
+                stage('Frontend Image Scan') {
+                    steps {
+                        script {
+                            sh """
+                                gcloud container images scan ${IMAGE_FRONTEND}:${env.GIT_COMMIT_SHORT} \
+                                --format='table(vulnerability.effectiveSeverity,vulnerability.cvssScore,package.name,package.packageType,vulnerability.description)'
+                            """
+                        }
+                    }
+                }
+            }
+        }
+        
+        stage('Deploy to Staging') {
+            when {
+                branch 'develop'
+            }
+            steps {
+                script {
+                    sh """
+                        gcloud container clusters get-credentials ${CLUSTER_NAME} --zone ${CLUSTER_ZONE} --project ${PROJECT_ID}
+                        
+                        # Create staging namespace if it doesn't exist
+                        kubectl create namespace staging --dry-run=client -o yaml | kubectl apply -f -
+                        
+                        # Update image tags in deployment files
+                        sed -i 's|IMAGE_TAG|${env.GIT_COMMIT_SHORT}|g' k8s/staging/*.yaml
+                        sed -i 's|PROJECT_ID|${PROJECT_ID}|g' k8s/staging/*.yaml
+                        
+                        # Apply staging configurations
+                        kubectl apply -f k8s/staging/ -n staging
+                        
+                        # Wait for deployments to complete
+                        kubectl rollout status deployment/placement-backend -n staging --timeout=300s
+                        kubectl rollout status deployment/placement-frontend -n staging --timeout=300s
+                    """
+                }
+            }
+        }
+        
+        stage('Integration Tests') {
+            when {
+                branch 'develop'
+            }
+            steps {
+                script {
+                    sh """
+                        # Get staging service URLs
+                        BACKEND_URL=\$(kubectl get service placement-backend-service -n staging -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+                        FRONTEND_URL=\$(kubectl get service placement-frontend-service -n staging -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+                        
+                        # Run integration tests
+                        npm run test:integration -- --backend-url=http://\$BACKEND_URL:5000 --frontend-url=http://\$FRONTEND_URL
+                    """
+                }
+            }
+        }
+        
+        stage('Deploy to Production') {
+            when {
+                branch 'main'
+            }
+            steps {
+                script {
+                    // Manual approval for production deployment
+                    input message: 'Deploy to Production?', ok: 'Deploy',
+                          submitterParameter: 'DEPLOYER'
+                    
+                    sh """
+                        gcloud container clusters get-credentials ${CLUSTER_NAME} --zone ${CLUSTER_ZONE} --project ${PROJECT_ID}
+                        
+                        # Update image tags in deployment files
+                        sed -i 's|IMAGE_TAG|${env.GIT_COMMIT_SHORT}|g' k8s/*.yaml
+                        sed -i 's|PROJECT_ID|${PROJECT_ID}|g' k8s/*.yaml
+                        
+                        # Apply production configurations
+                        kubectl apply -f k8s/
+                        
+                        # Wait for deployments to complete
+                        kubectl rollout status deployment/placement-backend --timeout=600s
+                        kubectl rollout status deployment/placement-frontend --timeout=600s
+                        
+                        # Verify deployment
+                        kubectl get pods -l app=placement-backend
+                        kubectl get pods -l app=placement-frontend
+                    """
+                }
+            }
+        }
+        
+        stage('Post-deployment Tests') {
+            when {
+                branch 'main'
+            }
+            steps {
+                script {
+                    sh """
+                        # Get production service URLs
+                        BACKEND_URL=\$(kubectl get service placement-backend-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+                        FRONTEND_URL=\$(kubectl get service placement-frontend-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+                        
+                        # Run smoke tests
+                        npm run test:smoke -- --backend-url=http://\$BACKEND_URL:5000 --frontend-url=http://\$FRONTEND_URL
+                    """
+                }
+            }
+        }
+    }
+    
+    post {
         always {
-          junit 'backend/jest-results.xml'
-          junit 'frontend/jest-results.xml'
+            // Clean up Docker images
+            sh """
+                docker rmi ${IMAGE_BACKEND}:${env.GIT_COMMIT_SHORT} || true
+                docker rmi ${IMAGE_FRONTEND}:${env.GIT_COMMIT_SHORT} || true
+                docker system prune -f
+            """
+            
+            // Archive test results
+            publishTestResults testResultsPattern: '**/test-results.xml'
+            
+            // Clean workspace
+            cleanWs()
         }
-      }
-    }
-
-    stage('SonarQube Analysis') {
-      steps {
-        withSonarQubeEnv('SonarQube') {
-          sh 'sonar-scanner \
-            -Dsonar.projectKey=placement-platform \
-            -Dsonar.sources=. \
-            -Dsonar.tests=backend,frontend \
-            -Dsonar.typescript.lcov.reportPaths=frontend/coverage/lcov.info,backend/coverage/lcov.info \
-            -Dsonar.login=$SONAR_TOKEN'
+        
+        success {
+            slackSend channel: '#deployment',
+                     color: 'good',
+                     message: "✅ Deployment successful! Pipeline: ${env.JOB_NAME} - Build: ${env.BUILD_NUMBER}"
         }
-      }
-    }
-
-    stage('Quality Gate') {
-      steps {
-        timeout(time: 5, unit: 'MINUTES') {
-          waitForQualityGate abortPipeline: true
+        
+        failure {
+            slackSend channel: '#deployment',
+                     color: 'danger',
+                     message: "❌ Deployment failed! Pipeline: ${env.JOB_NAME} - Build: ${env.BUILD_NUMBER}"
         }
-      }
     }
-
-    stage('Terraform Init & Plan') {
-      steps {
-        dir('infrastructure') {
-          // Setup GCP authentication for Terraform
-          sh 'echo "$GCP_CREDENTIALS" > gcp-key.json'
-          sh 'export GOOGLE_APPLICATION_CREDENTIALS=$PWD/gcp-key.json'
-          sh 'terraform init -input=false'
-          sh 'terraform plan -out=tfplan -input=false'
-        }
-      }
-    }
-
-    stage('Terraform Apply') {
-      steps {
-        dir('infrastructure') {
-          // Use GCP credentials file
-          sh 'export GOOGLE_APPLICATION_CREDENTIALS=$PWD/gcp-key.json'
-          sh 'terraform apply -input=false -auto-approve tfplan'
-        }
-      }
-    }
-
-    stage('Build & Push Docker') {
-      parallel {
-        stage('Backend Image') {
-          steps {
-            dir('backend') {
-              sh 'docker build -t $DOCKERHUB_CREDENTIALS_USR/placement-backend:${env.BUILD_NUMBER} .'
-              sh "docker login -u $DOCKERHUB_CREDENTIALS_USR -p $DOCKERHUB_CREDENTIALS_PSW"
-              sh 'docker push $DOCKERHUB_CREDENTIALS_USR/placement-backend:${env.BUILD_NUMBER}'
-            }
-          }
-        }
-        stage('Frontend Image') {
-          steps {
-            dir('frontend') {
-              sh 'docker build -t $DOCKERHUB_CREDENTIALS_USR/placement-frontend:${env.BUILD_NUMBER} .'
-              sh "docker login -u $DOCKERHUB_CREDENTIALS_USR -p $DOCKERHUB_CREDENTIALS_PSW"
-              sh 'docker push $DOCKERHUB_CREDENTIALS_USR/placement-frontend:${env.BUILD_NUMBER}'
-            }
-          }
-        }
-      }
-    }
-
-    stage('Deploy to GKE') {
-      steps {
-        dir('infrastructure') {
-          // authenticate gcloud
-          sh 'echo "$GCP_CREDENTIALS" > gcp-key.json'
-          sh 'gcloud auth activate-service-account --key-file=gcp-key.json'          sh 'gcloud container clusters get-credentials $CLUSTER_NAME --region $GCP_REGION --project $GCP_PROJECT_ID'
-        }
-        dir('k8s') {
-          // Update image tags in deployment files
-          sh "sed -i 's|\\${DOCKERHUB_CREDENTIALS_USR}|$DOCKERHUB_CREDENTIALS_USR|g; s|\\${BUILD_NUMBER}|${env.BUILD_NUMBER}|g' backend-deployment.yaml"
-          sh "sed -i 's|\\${DOCKERHUB_CREDENTIALS_USR}|$DOCKERHUB_CREDENTIALS_USR|g; s|\\${BUILD_NUMBER}|${env.BUILD_NUMBER}|g' frontend-deployment.yaml"
-          sh 'kubectl apply -f backend-deployment.yaml'
-          sh 'kubectl apply -f backend-service.yaml'
-          sh 'kubectl apply -f frontend-deployment.yaml'
-          sh 'kubectl apply -f frontend-service.yaml'
-        }
-      }
-    }
-  }
-
-  post {
-    success {
-      slackSend(channel: '#ci-cd-notifications', color: 'good', message: "Build ${env.JOB_NAME} #${env.BUILD_NUMBER} succeeded: ${env.BUILD_URL}")
-    }
-    failure {
-      slackSend(channel: '#ci-cd-notifications', color: 'danger', message: "Build ${env.JOB_NAME} #${env.BUILD_NUMBER} failed: ${env.BUILD_URL}")
-    }
-  }
 }

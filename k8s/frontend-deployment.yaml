@@ -2,8 +2,16 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: placement-frontend
+  labels:
+    app: placement-frontend
+    environment: production
 spec:
-  replicas: 2
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
   selector:
     matchLabels:
       app: placement-frontend
@@ -11,9 +19,76 @@ spec:
     metadata:
       labels:
         app: placement-frontend
+        environment: production
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "80"
     spec:
+      serviceAccountName: placement-frontend-sa
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        fsGroup: 101
       containers:
-      - name: placement-frontend
-        image: ${DOCKERHUB_CREDENTIALS_USR}/placement-frontend:${BUILD_NUMBER}
+      - name: frontend
+        image: gcr.io/avid-sunset-435316-a6/placement-frontend:v2
         ports:
         - containerPort: 80
+          name: http
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: REACT_APP_API_URL
+          value: "http://placement-backend-service:5000"
+        # Temporarily removing resource requests to allow scheduling on constrained nodes
+        # resources:
+        #   requests:
+        #     memory: "16Mi"
+        #     cpu: "10m"
+        #   limits:
+        #     memory: "32Mi"
+        #     cpu: "25m"
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        volumeMounts:
+        - name: nginx-cache
+          mountPath: /var/cache/nginx
+        - name: nginx-run
+          mountPath: /var/run
+      volumes:
+      - name: nginx-cache
+        emptyDir: {}
+      - name: nginx-run
+        emptyDir: {}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - placement-frontend
+              topologyKey: kubernetes.io/hostname

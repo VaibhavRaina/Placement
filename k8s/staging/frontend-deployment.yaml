@@ -1,0 +1,65 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: placement-frontend
+  namespace: staging
+  labels:
+    app: placement-frontend
+    environment: staging
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: placement-frontend
+  template:
+    metadata:
+      labels:
+        app: placement-frontend
+        environment: staging
+    spec:
+      containers:
+      - name: frontend
+        image: gcr.io/PROJECT_ID/placement-frontend:IMAGE_TAG
+        ports:
+        - containerPort: 80
+        env:
+        - name: NODE_ENV
+          value: "staging"
+        - name: REACT_APP_API_URL
+          value: "http://placement-backend-service:5000"
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: placement-frontend-service
+  namespace: staging
+  labels:
+    app: placement-frontend
+    environment: staging
+spec:
+  selector:
+    app: placement-frontend
+  ports:
+  - port: 80
+    targetPort: 80
+    protocol: TCP
+  type: LoadBalancer

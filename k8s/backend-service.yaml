@@ -1,11 +1,37 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: placement-backend
+  name: placement-backend-service
+  labels:
+    app: placement-backend
+    environment: production
+  annotations:
+    service.beta.kubernetes.io/gcp-load-balancer-type: "Internal"
 spec:
-  type: ClusterIP
   selector:
     app: placement-backend
   ports:
-    - port: 3000
-      targetPort: 3000
+  - port: 5000
+    targetPort: 5000
+    protocol: TCP
+    name: http
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: placement-frontend-service
+  labels:
+    app: placement-frontend
+    environment: production
+  annotations:
+    service.beta.kubernetes.io/gcp-load-balancer-type: "Internal"
+spec:
+  selector:
+    app: placement-frontend
+  ports:
+  - port: 80
+    targetPort: 80
+    protocol: TCP
+    name: http
+  type: ClusterIP
