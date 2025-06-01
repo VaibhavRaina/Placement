@@ -10,10 +10,7 @@ pipeline {
         IMAGE_FRONTEND = "${REGISTRY_HOSTNAME}/${PROJECT_ID}/placement-frontend"
         SONAR_HOST_URL = 'http://35.225.234.133:9000'
         KUBECONFIG = credentials('kubeconfig')
-    }
-    
-    tools {
-        nodejs '18'
+        PATH = "${env.PATH}:/usr/local/bin"
     }
     
     stages {
