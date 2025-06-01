@@ -85,20 +85,7 @@ pipeline {
                         script {
                             echo 'SonarQube analysis would run here'
                             echo "SonarQube server available at: ${SONAR_HOST_URL}"
-                            // Uncomment when SonarQube is properly configured
-                            /*
-                            def scannerHome = tool 'SonarQubeScanner'
-                            withSonarQubeEnv('SonarQube') {
-                                sh """
-                                    ${scannerHome}/bin/sonar-scanner \
-                                    -Dsonar.projectKey=placement-portal \
-                                    -Dsonar.sources=. \
-                                    -Dsonar.host.url=${SONAR_HOST_URL} \
-                                    -Dsonar.login=${SONAR_TOKEN} \
-                                    -Dsonar.exclusions=**/node_modules/**,**/coverage/**,**/*.test.js,**/*.spec.js
-                                """
-                            }
-                            */
+                            // SonarQube integration can be configured later
                         }
                     }
                 }
