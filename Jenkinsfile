@@ -119,35 +119,30 @@ pipeline {
         }
         
         stage('Build Docker Images') {
-            parallel {
-                stage('Build Backend') {
-                    steps {
-                        dir('backend') {
-                            script {
+            steps {
+                script {
+                    parallel([
+                        'Build Backend': {
+                            dir('backend') {
                                 echo "Building backend Docker image: ${IMAGE_BACKEND}:${env.GIT_COMMIT_SHORT}"
                                 sh "docker build -t ${IMAGE_BACKEND}:${env.GIT_COMMIT_SHORT} ."
                                 sh "docker tag ${IMAGE_BACKEND}:${env.GIT_COMMIT_SHORT} ${IMAGE_BACKEND}:latest"
-                                // Push commands will be added when GCR credentials are configured
                                 echo "Backend image built successfully"
                             }
-                        }
-                    }
-                }
-                
-                stage('Build Frontend') {
-                    steps {
-                        dir('frontend') {
-                            script {
+                        },
+                        'Build Frontend': {
+                            dir('frontend') {
                                 echo "Building frontend Docker image: ${IMAGE_FRONTEND}:${env.GIT_COMMIT_SHORT}"
                                 sh "docker build -t ${IMAGE_FRONTEND}:${env.GIT_COMMIT_SHORT} ."
                                 sh "docker tag ${IMAGE_FRONTEND}:${env.GIT_COMMIT_SHORT} ${IMAGE_FRONTEND}:latest"
-                                // Push commands will be added when GCR credentials are configured
                                 echo "Frontend image built successfully"
                             }
                         }
-                    }
+                    ])
                 }
             }
+        }
+        
         stage('Push Docker Images') {
             when {
                 anyOf {
