@@ -180,6 +180,14 @@ pipeline {
                 }
             }
         }
+        
+        stage('Security Scanning') {
+            when {
+                anyOf {
+                    branch 'main'
+                    branch 'develop'
+                }
+            }
             parallel {
                 stage('Backend Image Scan') {
                     steps {
