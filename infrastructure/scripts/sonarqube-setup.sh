@@ -110,5 +110,5 @@ while ! curl -sSf http://localhost:9000 > /dev/null; do
 done
 
 echo "SonarQube installation completed!"
-echo "Access SonarQube at: http://$(curl -s http://metadata.google.internal/computeMetadata/v1/instance/network-interfaces/0/access-configs/0/external-ip -H "Metadata-Flavor: Google"):9000"
+echo "Access SonarQube at: http://$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4):9000"
 echo "Default credentials: admin/admin"

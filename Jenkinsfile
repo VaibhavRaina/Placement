@@ -2,14 +2,14 @@ pipeline {
     agent any
     
     environment {
-        PROJECT_ID = 'avid-sunset-435316-a6'
+        AWS_REGION = 'us-east-1'
         CLUSTER_NAME = 'placement-portal-cluster'
-        CLUSTER_ZONE = 'us-central1-a'
-        REGISTRY_HOSTNAME = 'gcr.io'
-        IMAGE_BACKEND = "${REGISTRY_HOSTNAME}/${PROJECT_ID}/placement-backend"
-        IMAGE_FRONTEND = "${REGISTRY_HOSTNAME}/${PROJECT_ID}/placement-frontend"
-        SONAR_HOST_URL = 'http://35.225.234.133:9000'
+        ECR_REGISTRY = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+        IMAGE_BACKEND = "${ECR_REGISTRY}/placement-portal-backend"
+        IMAGE_FRONTEND = "${ECR_REGISTRY}/placement-portal-frontend"
+        SONAR_HOST_URL = 'http://sonarqube-server:9000'
         PATH = "${env.PATH}:/usr/local/bin"
+        AWS_DEFAULT_REGION = "${AWS_REGION}"
     }
     
     stages {
@@ -148,9 +148,43 @@ pipeline {
                     }
                 }
             }
+        stage('Push Docker Images') {
+            when {
+                anyOf {
+                    branch 'main'
+                    branch 'develop'
+                }
+            }
+            parallel {
+                stage('Push Backend') {
+                    steps {
+                        dir('backend') {
+                            script {
+                                echo "Pushing backend Docker image: ${IMAGE_BACKEND}:${env.GIT_COMMIT_SHORT}"
+                                sh "aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REGISTRY}"
+                                sh "docker push ${IMAGE_BACKEND}:${env.GIT_COMMIT_SHORT}"
+                                sh "docker push ${IMAGE_BACKEND}:latest"
+                                echo "Backend image pushed successfully"
+                            }
+                        }
+                    }
+                }
+                
+                stage('Push Frontend') {
+                    steps {
+                        dir('frontend') {
+                            script {
+                                echo "Pushing frontend Docker image: ${IMAGE_FRONTEND}:${env.GIT_COMMIT_SHORT}"
+                                sh "aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REGISTRY}"
+                                sh "docker push ${IMAGE_FRONTEND}:${env.GIT_COMMIT_SHORT}"
+                                sh "docker push ${IMAGE_FRONTEND}:latest"
+                                echo "Frontend image pushed successfully"
+                            }
+                        }
+                    }
+                }
+            }
         }
-        
-        stage('Security Scanning - Images') {
             parallel {
                 stage('Backend Image Scan') {
                     steps {
@@ -180,11 +214,29 @@ pipeline {
             }
             steps {
                 script {
-                    echo "Deploy to Staging stage - would deploy to staging environment"
-                    echo "Cluster: ${CLUSTER_NAME}, Zone: ${CLUSTER_ZONE}, Project: ${PROJECT_ID}"
+                    echo "Deploying to Staging environment"
+                    echo "Cluster: ${CLUSTER_NAME}, Region: ${AWS_REGION}"
                     echo "Backend Image: ${IMAGE_BACKEND}:${env.GIT_COMMIT_SHORT}"
                     echo "Frontend Image: ${IMAGE_FRONTEND}:${env.GIT_COMMIT_SHORT}"
-                    // Actual deployment commands will be added when kubectl access is configured
+                    
+                    // Connect to EKS cluster
+                    sh "aws eks update-kubeconfig --region ${AWS_REGION} --name ${CLUSTER_NAME}"
+                    
+                    // Create staging namespace if it doesn't exist
+                    sh "kubectl create namespace staging --dry-run=client -o yaml | kubectl apply -f -"
+                    
+                    // Update staging deployment files with new image tags
+                    sh "sed -i 's|__BACKEND_ECR_REPO__:.*|${IMAGE_BACKEND}:${env.GIT_COMMIT_SHORT}|g' k8s/staging/backend-deployment.yaml"
+                    sh "sed -i 's|__FRONTEND_ECR_REPO__:.*|${IMAGE_FRONTEND}:${env.GIT_COMMIT_SHORT}|g' k8s/staging/frontend-deployment.yaml"
+                    
+                    // Apply staging deployments
+                    sh "kubectl apply -f k8s/staging/"
+                    
+                    // Wait for rollout
+                    sh "kubectl rollout status deployment/placement-backend -n staging --timeout=300s"
+                    sh "kubectl rollout status deployment/placement-frontend -n staging --timeout=300s"
+                    
+                    echo "Staging deployment completed successfully"
                 }
             }
         }
@@ -212,10 +264,32 @@ pipeline {
                           submitterParameter: 'DEPLOYER'
                     
                     echo "Production deployment approved by: ${DEPLOYER}"
-                    echo "Would deploy to production cluster: ${CLUSTER_NAME}"
+                    echo "Deploying to production cluster: ${CLUSTER_NAME}"
                     echo "Backend Image: ${IMAGE_BACKEND}:${env.GIT_COMMIT_SHORT}"
                     echo "Frontend Image: ${IMAGE_FRONTEND}:${env.GIT_COMMIT_SHORT}"
-                    // Actual deployment commands will be added when kubectl access is configured
+                    
+                    // Connect to EKS cluster
+                    sh "aws eks update-kubeconfig --region ${AWS_REGION} --name ${CLUSTER_NAME}"
+                    
+                    // Update production deployment files with new image tags
+                    sh "sed -i 's|__BACKEND_ECR_REPO__:.*|${IMAGE_BACKEND}:${env.GIT_COMMIT_SHORT}|g' k8s/backend-deployment.yaml"
+                    sh "sed -i 's|__FRONTEND_ECR_REPO__:.*|${IMAGE_FRONTEND}:${env.GIT_COMMIT_SHORT}|g' k8s/frontend-deployment.yaml"
+                    
+                    // Apply production deployments
+                    sh "kubectl apply -f k8s/secrets.yaml"
+                    sh "kubectl apply -f k8s/backend-deployment.yaml"
+                    sh "kubectl apply -f k8s/frontend-deployment.yaml"
+                    sh "kubectl apply -f k8s/backend-service.yaml"
+                    sh "kubectl apply -f k8s/frontend-service.yaml"
+                    
+                    // Wait for rollout
+                    sh "kubectl rollout status deployment/placement-backend --timeout=300s"
+                    sh "kubectl rollout status deployment/placement-frontend --timeout=300s"
+                    
+                    // Get external IP
+                    sh "kubectl get services"
+                    
+                    echo "Production deployment completed successfully"
                 }
             }
         }

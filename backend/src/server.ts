@@ -39,6 +39,15 @@ app.get('/', (req: Request, res: Response) => {
   res.send('Placement Portal API is running');
 });
 
+// Health check endpoints for Kubernetes
+app.get('/health', (req: Request, res: Response) => {
+  res.status(200).json({ status: 'healthy', timestamp: new Date().toISOString() });
+});
+
+app.get('/ready', (req: Request, res: Response) => {
+  res.status(200).json({ status: 'ready', timestamp: new Date().toISOString() });
+});
+
 // Error handling middleware
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
   console.error(err.stack);
@@ -50,7 +59,7 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
 });
 
 // Start server
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 8080;
 
 app.listen(PORT, () => {
   console.log(`Server running in ${process.env.NODE_ENV} mode on port ${PORT}`);

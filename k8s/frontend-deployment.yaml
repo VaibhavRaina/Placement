@@ -31,15 +31,15 @@ spec:
         fsGroup: 101
       containers:
       - name: frontend
-        image: gcr.io/avid-sunset-435316-a6/placement-frontend:v2
+        image: 011528267161.dkr.ecr.us-east-1.amazonaws.com/placement-portal-frontend:latest
         ports:
-        - containerPort: 80
+        - containerPort: 8080
           name: http
         env:
         - name: NODE_ENV
           value: "production"
         - name: REACT_APP_API_URL
-          value: "http://placement-backend-service:5000"
+          value: "http://placement-backend-service:8080"
         # Temporarily removing resource requests to allow scheduling on constrained nodes
         # resources:
         #   requests:
@@ -48,38 +48,38 @@ spec:
         #   limits:
         #     memory: "32Mi"
         #     cpu: "25m"
-        securityContext:
-          allowPrivilegeEscalation: false
-          readOnlyRootFilesystem: true
-          capabilities:
-            drop:
-            - ALL
+        # securityContext:
+        #   allowPrivilegeEscalation: false
+        #   readOnlyRootFilesystem: true
+        #   capabilities:
+        #     drop:
+        #     - ALL
         livenessProbe:
           httpGet:
-            path: /
-            port: 80
+            path: /health
+            port: 8080
           initialDelaySeconds: 30
           periodSeconds: 10
           timeoutSeconds: 5
           failureThreshold: 3
         readinessProbe:
           httpGet:
-            path: /
-            port: 80
+            path: /health
+            port: 8080
           initialDelaySeconds: 5
           periodSeconds: 5
           timeoutSeconds: 3
           failureThreshold: 3
-        volumeMounts:
-        - name: nginx-cache
-          mountPath: /var/cache/nginx
-        - name: nginx-run
-          mountPath: /var/run
-      volumes:
-      - name: nginx-cache
-        emptyDir: {}
-      - name: nginx-run
-        emptyDir: {}
+        # volumeMounts:
+        # - name: nginx-cache
+        #   mountPath: /var/cache/nginx
+        # - name: nginx-run
+        #   mountPath: /var/run
+      # volumes:
+      # - name: nginx-cache
+      #   emptyDir: {}
+      # - name: nginx-run
+      #   emptyDir: {}
       affinity:
         podAntiAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:

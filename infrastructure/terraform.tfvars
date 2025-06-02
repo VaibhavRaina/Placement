@@ -1,12 +1,17 @@
-# Terraform variables file for production deployment
-project_id = "avid-sunset-435316-a6"
-region = "us-central1"
-zone = "us-central1-a"
-cluster_name = "placement-cluster"
-gke_num_nodes = 2
+# Terraform variables file for AWS deployment
+aws_region = "us-east-1"
+project_name = "placement-portal"
+environment = "dev"
+vpc_cidr = "10.0.0.0/16"
+eks_version = "1.29"
+node_instance_type = "t3.small"
+node_desired_size = 2
+node_max_size = 4
+node_min_size = 1
 db_username = "placement"
-db_password = "admin"
+db_password = "admin123"
+db_instance_class = "db.t3.medium"
+jenkins_ami_id = "ami-0c02fb55956c7d316"
+sonarqube_ami_id = "ami-0c02fb55956c7d316"
 github_owner = "VaibhavRaina"
 github_repo = "Placement"
-jenkins_admin_password = "admin"
-sonarqube_admin_password = "admin"

@@ -1,23 +1,26 @@
 # This file is maintained automatically by "terraform init".
 # Manual edits may be lost in future updates.
 
-provider "registry.terraform.io/hashicorp/google" {
-  version     = "4.85.0"
-  constraints = "~> 4.0"
+provider "registry.terraform.io/hashicorp/aws" {
+  version     = "5.99.1"
+  constraints = "~> 5.0"
   hashes = [
-    "h1:aSRZcEKF2wOi/v24IA+k9J2Y7aKVV1cHi/R0V3EhxXQ=",
-    "zh:17d60a6a6c1741cf1e09ac6731433a30950285eac88236e623ab4cbf23832ca3",
-    "zh:1c70254c016439dbb75cab646b4beace6ceeff117c75d81f2cc27d41c312f752",
-    "zh:35e2aa2cc7ac84ce55e05bb4de7b461b169d3582e56d3262e249ff09d64fe008",
-    "zh:417afb08d7b2744429f6b76806f4134d62b0354acf98e8a6c00de3c24f2bb6ad",
-    "zh:622165d09d21d9a922c86f1fc7177a400507f2a8c4a4513114407ae04da2dd29",
-    "zh:7cdb8e39a8ea0939558d87d2cb6caceded9e21f21003d9e9f9ce648d5db0bc3a",
-    "zh:851e737dc551d6004a860a8907fda65118fc2c7ede9fa828f7be704a2a39e68f",
-    "zh:a331ad289a02a2c4473572a573dc389be0a604cdd9e03dd8dbc10297fb14f14d",
-    "zh:b67fd531251380decd8dd1f849460d60f329f89df3d15f5815849a1dd001f430",
-    "zh:be8785957acca4f97aa3e800b313b57d1fca07788761c8867c9bc701fbe0bdb5",
-    "zh:cb6579a259fe020e1f88217d8f6937b2d5ace15b6406370977a1966eb31b1ca5",
-    "zh:f569b65999264a9416862bca5cd2a6177d94ccb0424f3a4ef424428912b9cb3c",
+    "h1:967WCGUW/vgrjUMBvC+HCie1DVgOXHwUkhm2ng3twJw=",
+    "zh:00b0a61c6d295300f0aa7a79a7d40e9f836164f1fff816d38324c148cd846887",
+    "zh:1ee9d5ccb67378704642db62113ac6c0d56d69408a9c1afb9a8e14b095fc0733",
+    "zh:2035977ed418dcb18290785c1eeb79b7133b39f718c470346e043ac48887ffc7",
+    "zh:67e3ca1bf7061900f81cf958d5c771a2fd6048c2b185bec7b27978349b173a90",
+    "zh:87fadbe5de7347ede72ad879ff8d8d9334103cd9aa4a321bb086bfac91654944",
+    "zh:901d170c457c2bff244a2282d9de595bdb3ebecc33a2034c5ce8aafbcff66db9",
+    "zh:92c07d6cf530679565b87934f9f98604652d787968cce6a3d24c148479b7e34b",
+    "zh:9b12af85486a96aedd8d7984b0ff811a4b42e3d88dad1a3fb4c0b580d04fa425",
+    "zh:a7d4803b4c5ff17f029f8b270c91480442ece27cec7922c38548bcfea2ac2d26",
+    "zh:afda848da7993a07d29018ec25ab6feda652e01d4b22721da570ce4fcc005292",
+    "zh:baaf16c98b81bad070e0908f057a97108ecd6e8c9f754d7a79b18df4c8453279",
+    "zh:c3dd496c5014427599d6b6b1c14c7ebb09a15df78918ae0be935e7bfa83b894c",
+    "zh:e2b84c1d40b3f2c4b1d74bf170b9e932983b61bac0e6dab2e36f5057ddcc997f",
+    "zh:e49c92cb29c53b4573ed4d9c946486e6bcfc1b63f1aee0c79cc7626f3d9add03",
+    "zh:efae8e339c4b13f546e0f96c42eb95bf8347de22e941594849b12688574bf380",
   ]
 }
 

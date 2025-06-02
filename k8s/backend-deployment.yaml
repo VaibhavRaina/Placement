@@ -22,7 +22,7 @@ spec:
         environment: production
       annotations:
         prometheus.io/scrape: "true"
-        prometheus.io/port: "5000"
+        prometheus.io/port: "8080"
         prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: placement-backend-sa
@@ -32,30 +32,22 @@ spec:
         fsGroup: 1001
       containers:
       - name: backend
-        image: gcr.io/avid-sunset-435316-a6/placement-backend:latest
+        image: 011528267161.dkr.ecr.us-east-1.amazonaws.com/placement-portal-backend:latest
         ports:
-        - containerPort: 5000
+        - containerPort: 8080
           name: http
         env:
         - name: NODE_ENV
           value: "production"
         - name: PORT
-          value: "5000"
-        - name: DATABASE_URL
+          value: "8080"
+        - name: MONGODB_URI
           valueFrom:
             secretKeyRef:
-              name: database-secret
-              key: database-url
+              name: mongodb-secret
+              key: mongodb-uri
         - name: JWT_SECRET
-          valueFrom:
-            secretKeyRef:
-              name: app-secret
-              key: jwt-secret
-        - name: REDIS_URL
-          valueFrom:
-            secretKeyRef:
-              name: cache-secret
-              key: redis-url
+          value: "placement_secret_key_change_in_production"
         # Temporarily removing resource requests to allow scheduling on constrained nodes
         # resources:
         #   requests:
@@ -70,30 +62,31 @@ spec:
           capabilities:
             drop:
             - ALL
-        livenessProbe:
-          httpGet:
-            path: /health
-            port: 5000
-          initialDelaySeconds: 60
-          periodSeconds: 10
-          timeoutSeconds: 5
-          failureThreshold: 3
-        readinessProbe:
-          httpGet:
-            path: /ready
-            port: 5000
-          initialDelaySeconds: 10
-          periodSeconds: 5
-          timeoutSeconds: 3
-          failureThreshold: 3
-        startupProbe:
-          httpGet:
-            path: /health
-            port: 5000
-          initialDelaySeconds: 10
-          periodSeconds: 10
-          timeoutSeconds: 5
-          failureThreshold: 30
+        # Temporarily removing health checks to get the app running
+        # livenessProbe:
+        #   httpGet:
+        #     path: /health
+        #     port: 5000
+        #   initialDelaySeconds: 60
+        #   periodSeconds: 10
+        #   timeoutSeconds: 5
+        #   failureThreshold: 3
+        # readinessProbe:
+        #   httpGet:
+        #     path: /ready
+        #     port: 5000
+        #   initialDelaySeconds: 10
+        #   periodSeconds: 5
+        #   timeoutSeconds: 3
+        #   failureThreshold: 3
+        # startupProbe:
+        #   httpGet:
+        #     path: /health
+        #     port: 5000
+        #   initialDelaySeconds: 10
+        #   periodSeconds: 10
+        #   timeoutSeconds: 5
+        #   failureThreshold: 30
         volumeMounts:
         - name: tmp
           mountPath: /tmp

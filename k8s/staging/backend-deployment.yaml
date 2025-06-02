@@ -19,7 +19,7 @@ spec:
     spec:
       containers:
       - name: backend
-        image: gcr.io/PROJECT_ID/placement-backend:IMAGE_TAG
+        image: 011528267161.dkr.ecr.us-east-1.amazonaws.com/placement-portal-backend:latest
         ports:
         - containerPort: 5000
         env:

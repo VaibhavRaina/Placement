@@ -1,10 +1,10 @@
-# Google Cloud Provider
+# AWS Provider Configuration
 terraform {
   required_version = ">= 1.0"
   required_providers {
-    google = {
-      source  = "hashicorp/google"
-      version = "~> 4.0"
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
     }
     kubernetes = {
       source  = "hashicorp/kubernetes"
@@ -13,331 +13,694 @@ terraform {
   }
 }
 
-provider "google" {
-  project = var.project_id
-  region  = var.region
-  zone    = var.zone
+provider "aws" {
+  region = var.aws_region
 }
 
-# Enable required APIs
-resource "google_project_service" "apis" {
-  for_each = toset([
-    "container.googleapis.com",
-    "compute.googleapis.com",
-    "cloudresourcemanager.googleapis.com",
-    "sqladmin.googleapis.com",
-    "servicenetworking.googleapis.com",
-    "cloudbuild.googleapis.com"
-  ])
-  
-  project = var.project_id
-  service = each.value
-  
-  disable_dependent_services = true
+# Data source for availability zones
+data "aws_availability_zones" "available" {
+  state = "available"
 }
 
-# VPC Network
-resource "google_compute_network" "vpc" {
-  name                    = "${var.project_id}-vpc"
-  auto_create_subnetworks = "false"
-  depends_on              = [google_project_service.apis]
-}
+# Data source for current AWS account ID
+data "aws_caller_identity" "current" {}
 
-# Subnet
-resource "google_compute_subnetwork" "subnet" {
-  name          = "${var.project_id}-subnet"
-  ip_cidr_range = "10.10.0.0/24"
-  region        = var.region
-  network       = google_compute_network.vpc.name
-  
-  secondary_ip_range {
-    range_name    = "services-range"
-    ip_cidr_range = "192.168.1.0/24"
-  }
-  
-  secondary_ip_range {
-    range_name    = "pod-ranges"
-    ip_cidr_range = "192.168.64.0/22"
+# VPC
+resource "aws_vpc" "main" {
+  cidr_block           = var.vpc_cidr
+  enable_dns_hostnames = true
+  enable_dns_support   = true
+
+  tags = {
+    Name        = "${var.project_name}-vpc"
+    Environment = var.environment
   }
 }
 
-# Private services connection for Cloud SQL
-resource "google_compute_global_address" "private_ip_address" {
-  name          = "private-ip-address"
-  purpose       = "VPC_PEERING"
-  address_type  = "INTERNAL"
-  prefix_length = 16
-  network       = google_compute_network.vpc.id
+# Internet Gateway
+resource "aws_internet_gateway" "main" {
+  vpc_id = aws_vpc.main.id
+
+  tags = {
+    Name        = "${var.project_name}-igw"
+    Environment = var.environment
+  }
 }
 
-resource "google_service_networking_connection" "private_vpc_connection" {
-  network                 = google_compute_network.vpc.id
-  service                 = "servicenetworking.googleapis.com"
-  reserved_peering_ranges = [google_compute_global_address.private_ip_address.name]
+# Public Subnets
+resource "aws_subnet" "public" {
+  count = 2
+
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = cidrsubnet(var.vpc_cidr, 8, count.index)
+  availability_zone       = data.aws_availability_zones.available.names[count.index]
+  map_public_ip_on_launch = true
+
+  tags = {
+    Name        = "${var.project_name}-public-${count.index + 1}"
+    Environment = var.environment
+    Type        = "public"
+  }
 }
 
-# Cloud SQL (MongoDB alternative - using PostgreSQL)
-resource "google_sql_database_instance" "main" {
-  name             = "${var.cluster_name}-db"
-  database_version = "POSTGRES_14"
-  region           = var.region
-  
-  settings {
-    tier = "db-f1-micro"
-    
-    ip_configuration {
-      ipv4_enabled                                  = false
-      private_network                               = google_compute_network.vpc.id
-      enable_private_path_for_google_cloud_services = true
-    }
+# Private Subnets
+resource "aws_subnet" "private" {
+  count = 2
+
+  vpc_id            = aws_vpc.main.id
+  cidr_block        = cidrsubnet(var.vpc_cidr, 8, count.index + 10)
+  availability_zone = data.aws_availability_zones.available.names[count.index]
+
+  tags = {
+    Name        = "${var.project_name}-private-${count.index + 1}"
+    Environment = var.environment
+    Type        = "private"
   }
-  
-  deletion_protection = false
-  depends_on          = [google_project_service.apis, google_service_networking_connection.private_vpc_connection]
 }
 
-resource "google_sql_database" "database" {
-  name     = "placement_db"
-  instance = google_sql_database_instance.main.name
+# Elastic IPs for NAT Gateways
+resource "aws_eip" "nat" {
+  count = 2
+
+  domain = "vpc"
+  depends_on = [aws_internet_gateway.main]
+
+  tags = {
+    Name        = "${var.project_name}-nat-eip-${count.index + 1}"
+    Environment = var.environment
+  }
 }
 
-resource "google_sql_user" "user" {
-  name     = var.db_username
-  instance = google_sql_database_instance.main.name
-  password = var.db_password
+# NAT Gateways
+resource "aws_nat_gateway" "main" {
+  count = 2
+
+  allocation_id = aws_eip.nat[count.index].id
+  subnet_id     = aws_subnet.public[count.index].id
+
+  tags = {
+    Name        = "${var.project_name}-nat-${count.index + 1}"
+    Environment = var.environment
+  }
+
+  depends_on = [aws_internet_gateway.main]
 }
 
-# Cloud SQL for MongoDB (managed database)
-resource "google_sql_database_instance" "mongodb" {
-  name             = "placement-mongodb"
-  database_version = "POSTGRES_14"
-  region           = var.region
+# Route Tables
+resource "aws_route_table" "public" {
+  vpc_id = aws_vpc.main.id
 
-  settings {
-    tier = "db-f1-micro"
-    
-    backup_configuration {
-      enabled = true
-    }
-
-    ip_configuration {
-      ipv4_enabled                                  = false
-      private_network                               = google_compute_network.vpc.id
-      enable_private_path_for_google_cloud_services = true
-    }
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.main.id
   }
 
-  deletion_protection = false
-  depends_on          = [google_service_networking_connection.private_vpc_connection]
+  tags = {
+    Name        = "${var.project_name}-public-rt"
+    Environment = var.environment
+  }
 }
 
-# GKE cluster setup
-resource "google_container_cluster" "placement_cluster" {
-  name     = "placement-portal-cluster"
-  location = var.zone
-  
-  remove_default_node_pool = true
-  initial_node_count       = 1
-  
-  network    = google_compute_network.vpc.name
-  subnetwork = google_compute_subnetwork.subnet.name
-  
-  ip_allocation_policy {
-    cluster_secondary_range_name  = "pod-ranges"
-    services_secondary_range_name = "services-range"
+resource "aws_route_table" "private" {
+  count = 2
+
+  vpc_id = aws_vpc.main.id
+
+  route {
+    cidr_block     = "0.0.0.0/0"
+    nat_gateway_id = aws_nat_gateway.main[count.index].id
   }
-  
-  network_policy {
-    enabled = false
+
+  tags = {
+    Name        = "${var.project_name}-private-rt-${count.index + 1}"
+    Environment = var.environment
   }
-  
-  workload_identity_config {
-    workload_pool = "${var.project_id}.svc.id.goog"
-  }
-  
-  monitoring_config {
-    enable_components = ["SYSTEM_COMPONENTS"]
-  }
-  
-  logging_config {
-    enable_components = ["SYSTEM_COMPONENTS"]
-  }
-  
-  depends_on = [google_project_service.apis]
 }
 
-resource "google_container_node_pool" "primary_nodes" {
-  name       = "primary-node-pool"
-  location   = var.zone
-  cluster    = google_container_cluster.placement_cluster.name
-  node_count = var.gke_num_nodes
-  
-  node_config {
-    oauth_scopes = [
-      "https://www.googleapis.com/auth/logging.write",
-      "https://www.googleapis.com/auth/monitoring",
-      "https://www.googleapis.com/auth/cloud-platform"
+# Route Table Associations
+resource "aws_route_table_association" "public" {
+  count = 2
+
+  subnet_id      = aws_subnet.public[count.index].id
+  route_table_id = aws_route_table.public.id
+}
+
+resource "aws_route_table_association" "private" {
+  count = 2
+
+  subnet_id      = aws_subnet.private[count.index].id
+  route_table_id = aws_route_table.private[count.index].id
+}
+
+# Security Group for EKS Cluster
+resource "aws_security_group" "eks_cluster" {
+  name_prefix = "${var.project_name}-eks-cluster-"
+  vpc_id      = aws_vpc.main.id
+
+  ingress {
+    description = "HTTPS"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name        = "${var.project_name}-eks-cluster-sg"
+    Environment = var.environment
+  }
+}
+
+# Security Group for EKS Node Group
+resource "aws_security_group" "eks_nodes" {
+  name_prefix = "${var.project_name}-eks-nodes-"
+  vpc_id      = aws_vpc.main.id
+
+  ingress {
+    description = "All traffic from cluster"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    self        = true
+  }
+
+  ingress {
+    description     = "All traffic from cluster security group"
+    from_port       = 0
+    to_port         = 0
+    protocol        = "-1"
+    security_groups = [aws_security_group.eks_cluster.id]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name        = "${var.project_name}-eks-nodes-sg"
+    Environment = var.environment
+  }
+}
+
+# EKS Cluster IAM Role
+resource "aws_iam_role" "eks_cluster" {
+  name = "${var.project_name}-eks-cluster-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "eks.amazonaws.com"
+        }
+      }
     ]
-    
-    labels = {
-      env = var.project_id
-    }
-    
-    machine_type = "e2-micro"
-    disk_size_gb = 20
-    disk_type    = "pd-standard"
-    tags         = ["gke-node", "${var.project_id}-gke"]
-    metadata = {
-      disable-legacy-endpoints = "true"
-    }
-    
-    workload_metadata_config {
-      mode = "GKE_METADATA"
-    }
-  }
-  
-  management {
-    auto_repair  = true
-    auto_upgrade = true
-  }
-  
-  autoscaling {
-    min_node_count = 1
-    max_node_count = 3
-  }
-}
-
-# Jenkins VM Instance
-resource "google_compute_instance" "jenkins" {
-  name         = "jenkins-server"
-  machine_type = "e2-small"
-  zone         = var.zone
-
-  boot_disk {
-    initialize_params {
-      image = "ubuntu-os-cloud/ubuntu-2204-lts"
-      size  = 30
-    }
-  }
-
-  network_interface {
-    network    = google_compute_network.vpc.name
-    subnetwork = google_compute_subnetwork.subnet.name
-    access_config {
-      // Ephemeral public IP
-    }
-  }
-
-  metadata_startup_script = templatefile("${path.module}/scripts/jenkins-setup.sh", {
-    project_id = var.project_id
   })
 
-  service_account {
-    email  = google_service_account.jenkins_sa.email
-    scopes = ["cloud-platform"]
+  tags = {
+    Name        = "${var.project_name}-eks-cluster-role"
+    Environment = var.environment
+  }
+}
+
+resource "aws_iam_role_policy_attachment" "eks_cluster_policy" {
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
+  role       = aws_iam_role.eks_cluster.name
+}
+
+# EKS Node Group IAM Role
+resource "aws_iam_role" "eks_node_group" {
+  name = "${var.project_name}-eks-node-group-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "ec2.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = {
+    Name        = "${var.project_name}-eks-node-group-role"
+    Environment = var.environment
+  }
+}
+
+resource "aws_iam_role_policy_attachment" "eks_worker_node_policy" {
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
+  role       = aws_iam_role.eks_node_group.name
+}
+
+resource "aws_iam_role_policy_attachment" "eks_cni_policy" {
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
+  role       = aws_iam_role.eks_node_group.name
+}
+
+resource "aws_iam_role_policy_attachment" "eks_container_registry_policy" {
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+  role       = aws_iam_role.eks_node_group.name
+}
+
+# EKS Cluster
+resource "aws_eks_cluster" "main" {
+  name     = "${var.project_name}-cluster"
+  role_arn = aws_iam_role.eks_cluster.arn
+  version  = var.eks_version
+
+  vpc_config {
+    subnet_ids              = concat(aws_subnet.public[*].id, aws_subnet.private[*].id)
+    security_group_ids      = [aws_security_group.eks_cluster.id]
+    endpoint_private_access = true
+    endpoint_public_access  = true
   }
 
-  tags = ["jenkins", "http-server", "https-server"]
+  enabled_cluster_log_types = ["api", "audit", "authenticator", "controllerManager", "scheduler"]
+
+  depends_on = [
+    aws_iam_role_policy_attachment.eks_cluster_policy,
+  ]
+
+  tags = {
+    Name        = "${var.project_name}-cluster"
+    Environment = var.environment
+  }
 }
 
-# SonarQube VM Instance
-resource "google_compute_instance" "sonarqube" {
-  name         = "sonarqube-server"
-  machine_type = "e2-small"
-  zone         = var.zone
+# EKS Node Group
+resource "aws_eks_node_group" "main" {
+  cluster_name    = aws_eks_cluster.main.name
+  node_group_name = "${var.project_name}-node-group"
+  node_role_arn   = aws_iam_role.eks_node_group.arn
+  subnet_ids      = aws_subnet.private[*].id
 
-  boot_disk {
-    initialize_params {
-      image = "ubuntu-os-cloud/ubuntu-2204-lts"
-      size  = 30
-    }
+  capacity_type  = "ON_DEMAND"
+  instance_types = [var.node_instance_type]
+
+  scaling_config {
+    desired_size = var.node_desired_size
+    max_size     = var.node_max_size
+    min_size     = var.node_min_size
   }
 
-  network_interface {
-    network    = google_compute_network.vpc.name
-    subnetwork = google_compute_subnetwork.subnet.name
-    access_config {
-      // Ephemeral public IP
-    }
+  update_config {
+    max_unavailable = 1
   }
 
-  metadata_startup_script = file("${path.module}/scripts/sonarqube-setup.sh")
+  depends_on = [
+    aws_iam_role_policy_attachment.eks_worker_node_policy,
+    aws_iam_role_policy_attachment.eks_cni_policy,
+    aws_iam_role_policy_attachment.eks_container_registry_policy,
+  ]
 
-  tags = ["sonarqube", "http-server"]
+  tags = {
+    Name        = "${var.project_name}-node-group"
+    Environment = var.environment
+  }
 }
 
-# Service Account for Jenkins
-resource "google_service_account" "jenkins_sa" {
-  account_id   = "jenkins-sa"
-  display_name = "Jenkins Service Account"
+# Kubernetes provider configuration
+data "aws_eks_cluster" "cluster" {
+  name = aws_eks_cluster.main.name
 }
 
-# IAM roles for Jenkins
-resource "google_project_iam_member" "jenkins_compute_admin" {
-  project = var.project_id
-  role    = "roles/compute.admin"
-  member  = "serviceAccount:${google_service_account.jenkins_sa.email}"
+data "aws_eks_cluster_auth" "cluster" {
+  name = aws_eks_cluster.main.name
 }
 
-resource "google_project_iam_member" "jenkins_container_admin" {
-  project = var.project_id
-  role    = "roles/container.admin"
-  member  = "serviceAccount:${google_service_account.jenkins_sa.email}"
+provider "kubernetes" {
+  host                   = data.aws_eks_cluster.cluster.endpoint
+  cluster_ca_certificate = base64decode(data.aws_eks_cluster.cluster.certificate_authority[0].data)
+  token                  = data.aws_eks_cluster_auth.cluster.token
 }
 
-resource "google_project_iam_member" "jenkins_storage_admin" {
-  project = var.project_id
-  role    = "roles/storage.admin"
-  member  = "serviceAccount:${google_service_account.jenkins_sa.email}"
-}
+# ECR Repository for Backend
+resource "aws_ecr_repository" "backend" {
+  name                 = "${var.project_name}-backend"
+  image_tag_mutability = "MUTABLE"
 
-resource "google_project_iam_member" "jenkins_source_repo_admin" {
-  project = var.project_id
-  role    = "roles/source.admin"
-  member  = "serviceAccount:${google_service_account.jenkins_sa.email}"
-}
-
-# Firewall rules
-resource "google_compute_firewall" "jenkins" {
-  name    = "jenkins-firewall"
-  network = google_compute_network.vpc.name
-
-  allow {
-    protocol = "tcp"
-    ports    = ["8080", "50000"]
+  image_scanning_configuration {
+    scan_on_push = true
   }
 
-  source_ranges = ["0.0.0.0/0"]
-  target_tags   = ["jenkins"]
+  tags = {
+    Name        = "${var.project_name}-backend"
+    Environment = var.environment
+  }
 }
 
-resource "google_compute_firewall" "sonarqube" {
-  name    = "sonarqube-firewall"
-  network = google_compute_network.vpc.name
+# ECR Repository for Frontend
+resource "aws_ecr_repository" "frontend" {
+  name                 = "${var.project_name}-frontend"
+  image_tag_mutability = "MUTABLE"
 
-  allow {
-    protocol = "tcp"
-    ports    = ["9000"]
+  image_scanning_configuration {
+    scan_on_push = true
   }
 
-  source_ranges = ["0.0.0.0/0"]
-  target_tags   = ["sonarqube"]
+  tags = {
+    Name        = "${var.project_name}-frontend"
+    Environment = var.environment
+  }
 }
 
-# Static IP for Load Balancer
-resource "google_compute_global_address" "default" {
-  name = "${var.cluster_name}-ip"
+# RDS Subnet Group
+resource "aws_db_subnet_group" "main" {
+  name       = "${var.project_name}-db-subnet-group"
+  subnet_ids = aws_subnet.private[*].id
+
+  tags = {
+    Name        = "${var.project_name}-db-subnet-group"
+    Environment = var.environment
+  }
 }
 
-# Create GCS bucket for storing artifacts
-resource "google_storage_bucket" "artifacts" {
-  name     = "${var.project_id}-${var.cluster_name}-artifacts"
-  location = var.region
+# Security Group for RDS
+resource "aws_security_group" "rds" {
+  name_prefix = "${var.project_name}-rds-"
+  vpc_id      = aws_vpc.main.id
+
+  ingress {
+    description     = "MongoDB from EKS nodes"
+    from_port       = 27017
+    to_port         = 27017
+    protocol        = "tcp"
+    security_groups = [aws_security_group.eks_nodes.id]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name        = "${var.project_name}-rds-sg"
+    Environment = var.environment
+  }
+}
+
+# DocumentDB (MongoDB-compatible) Cluster
+resource "aws_docdb_cluster" "main" {
+  cluster_identifier      = "${var.project_name}-docdb"
+  engine                  = "docdb"
+  master_username         = var.db_username
+  master_password         = var.db_password
+  backup_retention_period = 5
+  preferred_backup_window = "07:00-09:00"
+  skip_final_snapshot     = true
+  db_subnet_group_name    = aws_db_subnet_group.main.name
+  vpc_security_group_ids  = [aws_security_group.rds.id]
+
+  tags = {
+    Name        = "${var.project_name}-docdb"
+    Environment = var.environment
+  }
+}
+
+# DocumentDB Cluster Instance
+resource "aws_docdb_cluster_instance" "main" {
+  count              = 1
+  identifier         = "${var.project_name}-docdb-${count.index}"
+  cluster_identifier = aws_docdb_cluster.main.id
+  instance_class     = var.db_instance_class
+
+  tags = {
+    Name        = "${var.project_name}-docdb-${count.index}"
+    Environment = var.environment
+  }
+}
+
+# Security Group for ALB
+resource "aws_security_group" "alb" {
+  name_prefix = "${var.project_name}-alb-"
+  vpc_id      = aws_vpc.main.id
+
+  ingress {
+    description = "HTTP"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "HTTPS"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name        = "${var.project_name}-alb-sg"
+    Environment = var.environment
+  }
+}
+
+# Application Load Balancer
+resource "aws_lb" "main" {
+  name               = "${var.project_name}-alb"
+  internal           = false
+  load_balancer_type = "application"
+  security_groups    = [aws_security_group.alb.id]
+  subnets            = aws_subnet.public[*].id
+
+  enable_deletion_protection = false
+
+  tags = {
+    Name        = "${var.project_name}-alb"
+    Environment = var.environment
+  }
+}
+
+# EC2 Instance for Jenkins
+resource "aws_instance" "jenkins" {
+  ami           = var.jenkins_ami_id
+  instance_type = "t3.medium"  # 2 vCPU, 4 GB RAM - much better for Jenkins
+  subnet_id     = aws_subnet.public[0].id
+  vpc_security_group_ids = [aws_security_group.jenkins.id]
+  key_name      = "placement-portal-key"
   
-  uniform_bucket_level_access = true
+  user_data = templatefile("${path.module}/scripts/jenkins-setup-amazon-linux.sh", {
+    aws_region = var.aws_region
+  })
+
+  tags = {
+    Name        = "${var.project_name}-jenkins"
+    Environment = var.environment
+  }
+}
+
+# Elastic IP for Jenkins
+resource "aws_eip" "jenkins" {
+  instance = aws_instance.jenkins.id
+  domain   = "vpc"
+
+  tags = {
+    Name        = "${var.project_name}-jenkins-eip"
+    Environment = var.environment
+  }
+}
+
+# EC2 Instance for SonarQube
+resource "aws_instance" "sonarqube" {
+  ami           = var.sonarqube_ami_id
+  instance_type = "t3.medium"  # 2 vCPU, 4 GB RAM - much better for SonarQube
+  subnet_id     = aws_subnet.public[1].id
+  vpc_security_group_ids = [aws_security_group.sonarqube.id]
+  key_name      = "placement-portal-key"
   
-  versioning {
-    enabled = true
+  user_data = file("${path.module}/scripts/sonarqube-setup-amazon-linux.sh")
+
+  tags = {
+    Name        = "${var.project_name}-sonarqube"
+    Environment = var.environment
+  }
+}
+
+# Elastic IP for SonarQube
+resource "aws_eip" "sonarqube" {
+  instance = aws_instance.sonarqube.id
+  domain   = "vpc"
+
+  tags = {
+    Name        = "${var.project_name}-sonarqube-eip"
+    Environment = var.environment
+  }
+}
+
+# Security Group for Jenkins
+resource "aws_security_group" "jenkins" {
+  name_prefix = "${var.project_name}-jenkins-"
+  vpc_id      = aws_vpc.main.id
+
+  ingress {
+    description = "Jenkins Web UI"
+    from_port   = 8080
+    to_port     = 8080
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "SSH"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name        = "${var.project_name}-jenkins-sg"
+    Environment = var.environment
+  }
+}
+
+# Security Group for SonarQube
+resource "aws_security_group" "sonarqube" {
+  name_prefix = "${var.project_name}-sonarqube-"
+  vpc_id      = aws_vpc.main.id
+
+  ingress {
+    description = "SonarQube Web UI"
+    from_port   = 9000
+    to_port     = 9000
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "SSH"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name        = "${var.project_name}-sonarqube-sg"
+    Environment = var.environment
+  }
+}
+
+# IAM Role for Jenkins
+resource "aws_iam_role" "jenkins" {
+  name = "${var.project_name}-jenkins-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "ec2.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = {
+    Name        = "${var.project_name}-jenkins-role"
+    Environment = var.environment
+  }
+}
+
+# IAM Policy for Jenkins
+resource "aws_iam_policy" "jenkins" {
+  name = "${var.project_name}-jenkins-policy"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "ecr:*",
+          "eks:*",
+          "ec2:*",
+          "iam:PassRole"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "jenkins" {
+  policy_arn = aws_iam_policy.jenkins.arn
+  role       = aws_iam_role.jenkins.name
+}
+
+# Instance Profile for Jenkins
+resource "aws_iam_instance_profile" "jenkins" {
+  name = "${var.project_name}-jenkins-profile"
+  role = aws_iam_role.jenkins.name
+}
+
+# AWS S3 bucket for storing artifacts
+resource "aws_s3_bucket" "artifacts" {
+  bucket = "${var.project_name}-${var.environment}-artifacts"
+
+  tags = {
+    Name        = "${var.project_name}-artifacts"
+    Environment = var.environment
+  }
+}
+
+resource "aws_s3_bucket_versioning" "artifacts" {
+  bucket = aws_s3_bucket.artifacts.id
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "artifacts" {
+  bucket = aws_s3_bucket.artifacts.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
   }
 }
 
