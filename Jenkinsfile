@@ -164,13 +164,6 @@ pipeline {
         }
         
         stage('Push Docker Images') {
-            when {
-                anyOf {
-                    branch 'main'
-                    branch 'master'
-                    branch 'develop'
-                }
-            }
             parallel {
                 stage('Push Backend') {
                     steps {
@@ -203,13 +196,6 @@ pipeline {
         }
         
         stage('Security Scanning') {
-            when {
-                anyOf {
-                    branch 'main'
-                    branch 'master'
-                    branch 'develop'
-                }
-            }
             parallel {
                 stage('Backend Image Scan') {
                     steps {
@@ -279,12 +265,6 @@ pipeline {
         }
         
         stage('Deploy to Production') {
-            when {
-                anyOf {
-                    branch 'main'
-                    branch 'master'
-                }
-            }
             steps {
                 script {
                     // Manual approval for production deployment
@@ -323,12 +303,6 @@ pipeline {
         }
         
         stage('Post-deployment Tests') {
-            when {
-                anyOf {
-                    branch 'main'
-                    branch 'master'
-                }
-            }
             steps {
                 script {
                     echo "Post-deployment smoke tests would run here"
