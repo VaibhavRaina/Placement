@@ -4,9 +4,6 @@ pipeline {
     environment {
         AWS_REGION = 'us-east-1'
         CLUSTER_NAME = 'placement-portal-cluster'
-        ECR_REGISTRY = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
-        IMAGE_BACKEND = "${ECR_REGISTRY}/placement-portal-backend"
-        IMAGE_FRONTEND = "${ECR_REGISTRY}/placement-portal-frontend"
         SONAR_HOST_URL = 'http://sonarqube-server:9000'
         PATH = "${env.PATH}:/usr/local/bin"
         AWS_DEFAULT_REGION = "${AWS_REGION}"
@@ -21,6 +18,28 @@ pipeline {
                         script: "git rev-parse --short HEAD",
                         returnStdout: true
                     ).trim()
+                }
+            }
+        }
+        
+        stage('Setup AWS Environment') {
+            steps {
+                script {
+                    // Get AWS Account ID
+                    env.AWS_ACCOUNT_ID = sh(
+                        script: "aws sts get-caller-identity --query Account --output text",
+                        returnStdout: true
+                    ).trim()
+                    
+                    // Set ECR registry and image URLs
+                    env.ECR_REGISTRY = "${env.AWS_ACCOUNT_ID}.dkr.ecr.${env.AWS_REGION}.amazonaws.com"
+                    env.IMAGE_BACKEND = "${env.ECR_REGISTRY}/placement-portal-backend"
+                    env.IMAGE_FRONTEND = "${env.ECR_REGISTRY}/placement-portal-frontend"
+                    
+                    echo "AWS Account ID: ${env.AWS_ACCOUNT_ID}"
+                    echo "ECR Registry: ${env.ECR_REGISTRY}"
+                    echo "Backend Image: ${env.IMAGE_BACKEND}"
+                    echo "Frontend Image: ${env.IMAGE_FRONTEND}"
                 }
             }
         }
