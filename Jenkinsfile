@@ -147,6 +147,7 @@ pipeline {
             when {
                 anyOf {
                     branch 'main'
+                    branch 'master'
                     branch 'develop'
                 }
             }
@@ -185,6 +186,7 @@ pipeline {
             when {
                 anyOf {
                     branch 'main'
+                    branch 'master'
                     branch 'develop'
                 }
             }
@@ -258,7 +260,10 @@ pipeline {
         
         stage('Deploy to Production') {
             when {
-                branch 'main'
+                anyOf {
+                    branch 'main'
+                    branch 'master'
+                }
             }
             steps {
                 script {
@@ -299,7 +304,10 @@ pipeline {
         
         stage('Post-deployment Tests') {
             when {
-                branch 'main'
+                anyOf {
+                    branch 'main'
+                    branch 'master'
+                }
             }
             steps {
                 script {
