@@ -2,8 +2,12 @@ pipeline {
     agent any
     
     environment {
+        AWS_ACCOUNT_ID = '011528267161'
         AWS_REGION = 'us-east-1'
         CLUSTER_NAME = 'placement-portal-cluster'
+        ECR_REGISTRY = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+        IMAGE_BACKEND = "${ECR_REGISTRY}/placement-portal-backend"
+        IMAGE_FRONTEND = "${ECR_REGISTRY}/placement-portal-frontend"
         SONAR_HOST_URL = 'http://sonarqube-server:9000'
         PATH = "${env.PATH}:/usr/local/bin"
         AWS_DEFAULT_REGION = "${AWS_REGION}"
@@ -25,11 +29,8 @@ pipeline {
         stage('Setup AWS Environment') {
             steps {
                 script {
-                    // Get AWS Account ID
-                    env.AWS_ACCOUNT_ID = sh(
-                        script: "aws sts get-caller-identity --query Account --output text",
-                        returnStdout: true
-                    ).trim()
+                    // Set AWS Account ID (from terraform outputs)
+                    env.AWS_ACCOUNT_ID = "011528267161"
                     
                     // Set ECR registry and image URLs
                     env.ECR_REGISTRY = "${env.AWS_ACCOUNT_ID}.dkr.ecr.${env.AWS_REGION}.amazonaws.com"
