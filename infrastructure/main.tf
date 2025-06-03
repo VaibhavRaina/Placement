@@ -506,7 +506,7 @@ resource "aws_instance" "jenkins" {
   vpc_security_group_ids = [aws_security_group.jenkins.id]
   key_name      = "placement-portal-key"
   
-  user_data = templatefile("${path.module}/scripts/jenkins-setup-amazon-linux.sh", {
+  user_data = templatefile("${path.module}/scripts/jenkins-setup-ubuntu.sh", {
     aws_region = var.aws_region
   })
 
@@ -535,7 +535,7 @@ resource "aws_instance" "sonarqube" {
   vpc_security_group_ids = [aws_security_group.sonarqube.id]
   key_name      = "placement-portal-key"
   
-  user_data = file("${path.module}/scripts/sonarqube-setup-amazon-linux.sh")
+  user_data = file("${path.module}/scripts/sonarqube-setup-ubuntu.sh")
 
   tags = {
     Name        = "${var.project_name}-sonarqube"

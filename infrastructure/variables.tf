@@ -73,13 +73,13 @@ variable "db_instance_class" {
 variable "jenkins_ami_id" {
   description = "AMI ID for Jenkins instance"
   type        = string
-  default     = "ami-0453ec754f44f9a4a" # Amazon Linux 2 in us-east-1
+  default     = "ami-0e001c9271cf7f3b9" # Ubuntu 22.04 LTS in us-east-1
 }
 
 variable "sonarqube_ami_id" {
   description = "AMI ID for SonarQube instance"
   type        = string
-  default     = "ami-0453ec754f44f9a4a" # Amazon Linux 2 in us-east-1
+  default     = "ami-0e001c9271cf7f3b9" # Ubuntu 22.04 LTS in us-east-1
 }
 
 variable "github_owner" {
