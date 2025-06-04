@@ -15,9 +15,8 @@ build/
 .env.test.local
 .env.production.local
 
-# GCP credentials
+# Cloud credentials and keys
 *-key.json
-gcp-key.json
 *.pem
 
 # IDE and editor files
@@ -40,8 +39,7 @@ coverage/
 # Docker
 .dockerignore
 
-# Google Cloud SDK and tools
-y/
+# Cloud SDK and tools
 google-cloud-sdk/
 .terraform/
 terraform.tfstate*

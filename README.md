@@ -31,7 +31,7 @@ This project implements a complete CI/CD pipeline with the following components:
 ### Prerequisites
 
 Ensure you have the following tools installed:
-- [Google Cloud SDK](https://cloud.google.com/sdk/docs/install)
+- [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html)
 - [Docker](https://docs.docker.com/get-docker/)
 - [kubectl](https://kubernetes.io/docs/tasks/tools/)
 - [Terraform](https://www.terraform.io/downloads)
@@ -44,8 +44,11 @@ Ensure you have the following tools installed:
 git clone <your-repo-url>
 cd Placement
 
-# Run the complete CI/CD deployment
-./deploy-cicd.sh your-gcp-project-id us-central1 us-central1-a
+# Configure AWS credentials first
+aws configure
+
+# Run the complete AWS deployment
+./deploy-aws.sh
 ```
 
 ### Manual Step-by-Step Deployment
@@ -80,31 +83,28 @@ terraform apply
 #### 2. Configure kubectl
 
 ```bash
-# Get GKE credentials
-gcloud container clusters get-credentials placement-portal-cluster \
-    --zone us-central1-a \
-    --project your-gcp-project-id
+# Get EKS credentials
+aws eks update-kubeconfig --region us-east-1 --name placement-portal-cluster
 ```
 
 #### 3. Build and Deploy Applications
 
 ```bash
-# Configure Docker for GCR
-gcloud auth configure-docker
+# Configure Docker for ECR
+aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin <account-id>.dkr.ecr.us-east-1.amazonaws.com
 
 # Build and push images
 cd backend
-docker build -t gcr.io/your-project-id/placement-backend:latest .
-docker push gcr.io/your-project-id/placement-backend:latest
+docker build -t <account-id>.dkr.ecr.us-east-1.amazonaws.com/placement-portal-backend:latest .
+docker push <account-id>.dkr.ecr.us-east-1.amazonaws.com/placement-portal-backend:latest
 
 cd ../frontend
-docker build -t gcr.io/your-project-id/placement-frontend:latest .
-docker push gcr.io/your-project-id/placement-frontend:latest
+docker build -t <account-id>.dkr.ecr.us-east-1.amazonaws.com/placement-portal-frontend:latest .
+docker push <account-id>.dkr.ecr.us-east-1.amazonaws.com/placement-portal-frontend:latest
 
 # Update Kubernetes configurations
 cd ../k8s
-sed -i 's|PROJECT_ID|your-project-id|g' *.yaml
-sed -i 's|IMAGE_TAG|latest|g' *.yaml
+# Images are already configured for ECR in the deployment files
 
 # Deploy to Kubernetes
 kubectl apply -f secrets.yaml
@@ -145,7 +145,7 @@ helm upgrade --install prometheus prometheus-community/kube-prometheus-stack \
 5. Configure the following:
    - GitHub webhook
    - SonarQube integration
-   - Google Cloud credentials
+   - AWS credentials
    - Kubernetes plugin configuration
 
 ### SonarQube Configuration
@@ -174,7 +174,7 @@ helm upgrade --install prometheus prometheus-community/kube-prometheus-stack \
 1. **Code Commit** - Developer pushes code to GitHub
 2. **Webhook Trigger** - GitHub webhook triggers Jenkins pipeline
 3. **Code Quality** - SonarQube analyzes code quality and security
-4. **Build** - Docker images are built and pushed to GCR
+4. **Build** - Docker images are built and pushed to ECR
 5. **Security Scan** - Container images are scanned for vulnerabilities
 6. **Deploy to Staging** - Application deployed to staging namespace
 7. **Integration Tests** - Automated tests run against staging environment
@@ -253,8 +253,8 @@ Pre-configured dashboards:
 
 ### Log Aggregation
 
-Application logs are automatically collected by GKE and available in:
-- Google Cloud Logging
+Application logs are automatically collected by EKS and available in:
+- AWS CloudWatch Logs
 - Prometheus/Grafana stack
 
 ## 🛡️ Security Features
@@ -281,8 +281,8 @@ Application logs are automatically collected by GKE and available in:
 
 1. **Jenkins not accessible**
    ```bash
-   # Check Jenkins pod status
-   gcloud compute ssh jenkins-server --zone=us-central1-a
+   # Check Jenkins EC2 instance status
+   ssh -i placement-portal-key.pem ubuntu@<jenkins-ip>
    sudo systemctl status jenkins
    ```
 
@@ -301,8 +301,8 @@ Application logs are automatically collected by GKE and available in:
 
 4. **SSL certificate issues**
    ```bash
-   # Check managed certificate status
-   kubectl describe managedcertificate placement-portal-ssl
+   # Check certificate status in AWS Certificate Manager
+   aws acm list-certificates --region us-east-1
    ```
 
 ### Debug Commands

@@ -102,7 +102,6 @@ pipeline {
                         script {
                             echo 'SonarQube analysis would run here'
                             echo "SonarQube server available at: ${SONAR_HOST_URL}"
-                            // SonarQube integration can be configured later
                         }
                     }
                 }
@@ -128,12 +127,7 @@ pipeline {
             steps {
                 script {
                     echo 'Quality gate check would run here'
-                    // Uncomment when SonarQube is properly configured
-                    /*
-                    timeout(time: 10, unit: 'MINUTES') {
-                        waitForQualityGate abortPipeline: true
-                    }
-                    */
+                    // Quality gate will be configured when SonarQube is set up
                 }
             }
         }

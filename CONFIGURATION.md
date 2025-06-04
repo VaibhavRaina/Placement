@@ -25,27 +25,27 @@ sonar.sources=.
 sonar.exclusions=**/node_modules/**,**/coverage/**,**/*.test.js,**/*.spec.js,**/dist/**
 ```
 
-### 2. **GCP Authentication & Setup**
+### 2. **AWS Authentication & Setup**
 
 ```bash
-# 1. Authenticate with Google Cloud
-gcloud auth login
+# 1. Configure AWS credentials
+aws configure
 
-# 2. Set your project
-gcloud config set project avid-sunset-435316-a6
+# 2. Set your default region (e.g., us-east-1)
+aws configure set default.region us-east-1
 
-# 3. Enable required APIs (will be done automatically by deployment script)
-gcloud services enable container.googleapis.com compute.googleapis.com cloudbuild.googleapis.com
+# 3. Verify authentication
+aws sts get-caller-identity
 ```
 
 ### 3. **Deploy the Infrastructure**
 
 ```bash
 # Make deployment script executable
-chmod +x deploy-cicd.sh
+chmod +x deploy-aws.sh
 
 # Run the complete deployment
-./deploy-cicd.sh avid-sunset-435316-a6 us-central1 us-central1-a
+./deploy-aws.sh
 ```
 
 ## ⚙️ Post-Deployment Configuration Required
@@ -59,7 +59,8 @@ The deployment script will output the Jenkins URL and initial password. Configur
 2. Use the initial admin password from deployment output
 3. Install suggested plugins + these additional ones:
    - SonarQube Scanner
-   - Google Kubernetes Engine
+   - Amazon ECR
+   - Kubernetes
    - Docker Pipeline
    - GitHub Integration
 
@@ -84,9 +85,9 @@ Navigate to `Manage Jenkins > Configure System`:
 - Server URL: `http://SONARQUBE_IP:9000`
 - Server authentication token: (Get from SonarQube setup below)
 
-**Google Cloud Configuration:**
-- Add service account key for your project
-- Configure kubectl access to GKE cluster
+**AWS Configuration:**
+- Configure AWS credentials for ECR access
+- Configure kubectl access to EKS cluster
 
 ### 5. **SonarQube Configuration**
 
@@ -105,8 +106,8 @@ Navigate to `Manage Jenkins > Configure System`:
 After deployment, update the secrets with real values:
 
 ```bash
-# Connect to your GKE cluster
-gcloud container clusters get-credentials placement-cluster --zone us-central1-a --project avid-sunset-435316-a6
+# Connect to your EKS cluster
+aws eks update-kubeconfig --region us-east-1 --name placement-portal-cluster
 
 # Update database secret (replace with your actual MongoDB URI)
 kubectl create secret generic database-secret \
@@ -198,11 +199,11 @@ curl http://LOAD_BALANCER_IP/api/health  # Backend health check
 
 ### Jenkins Not Accessible
 ```bash
-# Check Jenkins VM status
-gcloud compute instances list --filter="name:jenkins-server"
+# Check Jenkins EC2 instance status
+aws ec2 describe-instances --filters "Name=tag:Name,Values=placement-portal-jenkins"
 
-# SSH into Jenkins server
-gcloud compute ssh jenkins-server --zone=us-central1-a
+# SSH into Jenkins server (replace with your key file)
+ssh -i placement-portal-key.pem ubuntu@JENKINS_IP
 
 # Check Jenkins service
 sudo systemctl status jenkins
@@ -211,8 +212,8 @@ sudo journalctl -u jenkins -f
 
 ### SonarQube Not Starting
 ```bash
-# SSH into SonarQube server
-gcloud compute ssh sonarqube-server --zone=us-central1-a
+# SSH into SonarQube server (replace with your key file)
+ssh -i placement-portal-key.pem ubuntu@SONARQUBE_IP
 
 # Check SonarQube service
 sudo systemctl status sonarqube
@@ -290,4 +291,4 @@ sonar-scanner -Dsonar.host.url=http://SONARQUBE_IP:9000 \
 
 ---
 
-**Next Step:** Run `./deploy-cicd.sh avid-sunset-435316-a6` to start the deployment!
+**Next Step:** Run `./deploy-aws.sh` to start the deployment!
