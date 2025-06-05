@@ -15,24 +15,17 @@ NC='\033[0m' # No Color
 # Configuration
 AWS_REGION=${AWS_REGION:-"us-east-1"}
 
-cleanup_k8s() {
-    echo -e "${BLUE}Cleaning up Kubernetes resources...${NC}"
-    
-    # Delete in reverse order
-    kubectl delete -f k8s/ingress.yaml --ignore-not-found=true
-    kubectl delete -f k8s/frontend-service.yaml --ignore-not-found=true
-    kubectl delete -f k8s/frontend-deployment.yaml --ignore-not-found=true
-    kubectl delete -f k8s/backend-service.yaml --ignore-not-found=true
-    kubectl delete -f k8s/backend-deployment.yaml --ignore-not-found=true
-    kubectl delete -f k8s/mongodb-service.yaml --ignore-not-found=true
-    kubectl delete -f k8s/mongodb-deployment.yaml --ignore-not-found=true
-    kubectl delete -f k8s/mongodb-pvc.yaml --ignore-not-found=true
-    kubectl delete -f k8s/secrets.yaml --ignore-not-found=true
-    
-    # Clean up staging namespace
-    kubectl delete namespace staging --ignore-not-found=true
-    
-    echo -e "${GREEN}✅ Kubernetes resources cleaned up${NC}"
+cleanup_ec2_instances() {
+    echo -e "${BLUE}Cleaning up EC2 Auto Scaling Groups...${NC}"
+
+    # Set desired capacity to 0 for all ASGs
+    aws autoscaling update-auto-scaling-group --auto-scaling-group-name placement-portal-backend-asg --desired-capacity 0 --min-size 0 2>/dev/null || echo "Backend ASG not found"
+    aws autoscaling update-auto-scaling-group --auto-scaling-group-name placement-portal-frontend-asg --desired-capacity 0 --min-size 0 2>/dev/null || echo "Frontend ASG not found"
+
+    echo "Waiting for instances to terminate..."
+    sleep 30
+
+    echo -e "${GREEN}✅ EC2 instances cleaned up${NC}"
 }
 
 cleanup_docker_images() {
@@ -65,11 +58,11 @@ cleanup_terraform() {
 
 main() {
     echo -e "${GREEN}=== AWS Infrastructure Cleanup ===${NC}"
-    
-    cleanup_k8s
+
+    cleanup_ec2_instances
     cleanup_docker_images
     cleanup_terraform
-    
+
     echo -e "${GREEN}🧹 Cleanup completed!${NC}"
 }
 

@@ -22,7 +22,12 @@ app.use(express.json());
 
 // CORS configuration
 const corsOptions = {
-  origin: ['http://localhost:3000', 'http://localhost:5173'], // Both common development ports
+  origin: [
+    'http://localhost:3000',
+    'http://localhost:5173',
+    /^http:\/\/.*\.elb\.amazonaws\.com$/,
+    /^http:\/\/.*\.compute\.amazonaws\.com$/
+  ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization']
@@ -33,6 +38,11 @@ app.use(cors(corsOptions));
 app.use('/api/auth', authRoutes);
 app.use('/api/notices', noticeRoutes);
 app.use('/api/students', studentRoutes);
+
+// API Health check endpoint
+app.get('/api/health', (req: Request, res: Response) => {
+  res.status(200).json({ status: 'healthy', timestamp: new Date().toISOString() });
+});
 
 // Basic route
 app.get('/', (req: Request, res: Response) => {
@@ -59,7 +69,7 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
 });
 
 // Start server
-const PORT = process.env.PORT || 8080;
+const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {
   console.log(`Server running in ${process.env.NODE_ENV} mode on port ${PORT}`);

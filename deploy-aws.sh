@@ -14,7 +14,6 @@ NC='\033[0m' # No Color
 
 # Configuration
 AWS_REGION=${AWS_REGION:-"us-east-1"}
-CLUSTER_NAME="placement-portal-cluster"
 
 # Check dependencies
 check_dependencies() {
@@ -30,10 +29,7 @@ check_dependencies() {
         exit 1
     fi
     
-    if ! command -v kubectl &> /dev/null; then
-        echo -e "${RED}kubectl not found. Please install kubectl first.${NC}"
-        exit 1
-    fi
+
     
     if ! command -v docker &> /dev/null; then
         echo -e "${RED}Docker not found. Please install Docker first.${NC}"
@@ -73,30 +69,29 @@ deploy_terraform() {
     
     # Get outputs
     echo -e "${BLUE}Getting infrastructure outputs...${NC}"
-    CLUSTER_NAME=$(terraform output -raw cluster_name)
     BACKEND_ECR_URL=$(terraform output -raw backend_repository_url)
     FRONTEND_ECR_URL=$(terraform output -raw frontend_repository_url)
     DOCDB_ENDPOINT=$(terraform output -raw docdb_cluster_endpoint)
+    ALB_DNS=$(terraform output -raw load_balancer_dns)
     
     cd ..
     
     echo -e "${GREEN}✅ Infrastructure deployed successfully${NC}"
-    echo -e "${BLUE}Cluster Name: ${CLUSTER_NAME}${NC}"
     echo -e "${BLUE}Backend ECR: ${BACKEND_ECR_URL}${NC}"
     echo -e "${BLUE}Frontend ECR: ${FRONTEND_ECR_URL}${NC}"
     echo -e "${BLUE}DocumentDB Endpoint: ${DOCDB_ENDPOINT}${NC}"
+    echo -e "${BLUE}Load Balancer DNS: ${ALB_DNS}${NC}"
 }
 
-# Configure kubectl for EKS
-configure_kubectl() {
-    echo -e "${BLUE}Configuring kubectl for EKS...${NC}"
-    
-    aws eks update-kubeconfig --region ${AWS_REGION} --name ${CLUSTER_NAME}
-    
-    # Verify connection
-    kubectl get nodes
-    
-    echo -e "${GREEN}✅ kubectl configured for EKS${NC}"
+# Wait for infrastructure to be ready
+wait_for_infrastructure() {
+    echo -e "${BLUE}Waiting for infrastructure to be ready...${NC}"
+
+    # Wait for load balancer to be active
+    echo -e "${YELLOW}Waiting for load balancer to be active...${NC}"
+    aws elbv2 wait load-balancer-available --load-balancer-arns $(aws elbv2 describe-load-balancers --names placement-portal-alb --query 'LoadBalancers[0].LoadBalancerArn' --output text --region ${AWS_REGION})
+
+    echo -e "${GREEN}✅ Infrastructure is ready${NC}"
 }
 
 # Build and push Docker images
@@ -123,92 +118,76 @@ build_and_push_images() {
     echo -e "${GREEN}✅ Docker images built and pushed${NC}"
 }
 
-# Update Kubernetes manifests
-update_k8s_manifests() {
-    echo -e "${BLUE}Updating Kubernetes manifests...${NC}"
-    
-    # Update production deployments
-    sed -i "s|__BACKEND_ECR_REPO__:latest|${BACKEND_ECR_URL}:latest|g" k8s/backend-deployment.yaml
-    sed -i "s|__FRONTEND_ECR_REPO__:latest|${FRONTEND_ECR_URL}:latest|g" k8s/frontend-deployment.yaml
-    
-    # Update staging deployments
-    sed -i "s|__BACKEND_ECR_REPO__:staging|${BACKEND_ECR_URL}:latest|g" k8s/staging/backend-deployment.yaml
-    sed -i "s|__FRONTEND_ECR_REPO__:staging|${FRONTEND_ECR_URL}:latest|g" k8s/staging/frontend-deployment.yaml
-    
-    # Update DocumentDB connection string in secrets
-    MONGODB_URI="mongodb://placement:Placement@123@${DOCDB_ENDPOINT}:27017/placement_db?ssl=true&retryWrites=false"
-    MONGODB_URI_B64=$(echo -n "$MONGODB_URI" | base64 -w 0)
-    sed -i "s|mongodb-uri: .*|mongodb-uri: ${MONGODB_URI_B64}|g" k8s/secrets.yaml
-    
-    echo -e "${GREEN}✅ Kubernetes manifests updated${NC}"
+# Deploy applications to EC2
+deploy_to_ec2() {
+    echo -e "${BLUE}Deploying applications to EC2 instances...${NC}"
+
+    # Check if this is initial deployment or update
+    if aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names placement-portal-backend-asg --region ${AWS_REGION} >/dev/null 2>&1; then
+        echo -e "${YELLOW}Infrastructure exists - using EC2 deployment script for updates${NC}"
+        ./deploy-ec2.sh
+    else
+        echo -e "${YELLOW}Initial deployment - infrastructure will be created by Terraform${NC}"
+        echo -e "${BLUE}Building and pushing initial images...${NC}"
+
+        # Build and push images for initial deployment
+        build_and_push_images
+
+        echo -e "${GREEN}✅ Initial images built and pushed${NC}"
+        echo -e "${YELLOW}Note: Applications will be deployed when instances launch${NC}"
+    fi
+
+    echo -e "${GREEN}✅ EC2 deployment process completed${NC}"
 }
 
-# Deploy to Kubernetes
-deploy_k8s() {
-    echo -e "${BLUE}Deploying to Kubernetes...${NC}"
-    
-    # Apply secrets first
-    kubectl apply -f k8s/secrets.yaml
-    
-    # Apply persistent volumes
-    kubectl apply -f k8s/mongodb-pvc.yaml
-    
-    # Apply MongoDB deployment
-    kubectl apply -f k8s/mongodb-deployment.yaml
-    kubectl apply -f k8s/mongodb-service.yaml
-    
-    # Wait for MongoDB to be ready
-    echo -e "${YELLOW}Waiting for MongoDB to be ready...${NC}"
-    kubectl wait --for=condition=ready pod -l app=mongodb --timeout=300s
-    
-    # Apply application deployments
-    kubectl apply -f k8s/backend-deployment.yaml
-    kubectl apply -f k8s/backend-service.yaml
-    kubectl apply -f k8s/frontend-deployment.yaml
-    kubectl apply -f k8s/frontend-service.yaml
-    
-    # Apply ingress
-    kubectl apply -f k8s/ingress.yaml
-    
-    # Wait for deployments to be ready
-    echo -e "${YELLOW}Waiting for deployments to be ready...${NC}"
-    kubectl rollout status deployment/placement-backend --timeout=300s
-    kubectl rollout status deployment/placement-frontend --timeout=300s
-    
-    echo -e "${GREEN}✅ Applications deployed to Kubernetes${NC}"
+# Check deployment status
+check_deployment_status() {
+    echo -e "${BLUE}Checking deployment status...${NC}"
+
+    # Check Auto Scaling Groups
+    echo -e "${YELLOW}Backend ASG Status:${NC}"
+    aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names placement-portal-backend-asg --region ${AWS_REGION} --query 'AutoScalingGroups[0].{DesiredCapacity:DesiredCapacity,MinSize:MinSize,MaxSize:MaxSize,Instances:length(Instances)}' --output table
+
+    echo -e "${YELLOW}Frontend ASG Status:${NC}"
+    aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names placement-portal-frontend-asg --region ${AWS_REGION} --query 'AutoScalingGroups[0].{DesiredCapacity:DesiredCapacity,MinSize:MinSize,MaxSize:MaxSize,Instances:length(Instances)}' --output table
+
+    # Check target group health
+    echo -e "${YELLOW}Target Group Health:${NC}"
+    aws elbv2 describe-target-health --target-group-arn $(aws elbv2 describe-target-groups --names placement-portal-backend-tg --query 'TargetGroups[0].TargetGroupArn' --output text --region ${AWS_REGION}) --region ${AWS_REGION} --query 'TargetHealthDescriptions[*].{Target:Target.Id,Health:TargetHealth.State}' --output table
+
+    echo -e "${GREEN}✅ Deployment status checked${NC}"
 }
 
 # Get service information
 get_service_info() {
     echo -e "${BLUE}Getting service information...${NC}"
-    
-    echo -e "${YELLOW}Services:${NC}"
-    kubectl get services
-    
-    echo -e "${YELLOW}Ingress:${NC}"
-    kubectl get ingress
-    
-    echo -e "${YELLOW}Pods:${NC}"
-    kubectl get pods
-    
-    # Get load balancer URL
-    LB_URL=$(kubectl get ingress placement-ingress -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "Pending...")
-    echo -e "${GREEN}Application URL: http://${LB_URL}${NC}"
+
+    echo -e "${YELLOW}Load Balancer Information:${NC}"
+    aws elbv2 describe-load-balancers --names placement-portal-alb --region ${AWS_REGION} --query 'LoadBalancers[0].{DNSName:DNSName,State:State.Code,Type:Type}' --output table
+
+    echo -e "${YELLOW}Jenkins Information:${NC}"
+    JENKINS_IP=$(aws ec2 describe-addresses --filters "Name=tag:Name,Values=placement-portal-jenkins-eip" --query 'Addresses[0].PublicIp' --output text --region ${AWS_REGION})
+    echo "Jenkins URL: http://${JENKINS_IP}:8080"
+
+    echo -e "${YELLOW}SonarQube Information:${NC}"
+    SONARQUBE_IP=$(aws ec2 describe-addresses --filters "Name=tag:Name,Values=placement-portal-sonarqube-eip" --query 'Addresses[0].PublicIp' --output text --region ${AWS_REGION})
+    echo "SonarQube URL: http://${SONARQUBE_IP}:9000"
+
+    echo -e "${GREEN}Application URL: http://${ALB_DNS}${NC}"
 }
 
 # Main deployment function
 main() {
     echo -e "${GREEN}=== AWS Placement Portal Deployment ===${NC}"
-    
+
     check_dependencies
     configure_aws
     deploy_terraform
-    configure_kubectl
-    build_and_push_images
-    update_k8s_manifests
-    deploy_k8s
+    wait_for_infrastructure
+    deploy_to_ec2
+    check_deployment_status
     get_service_info
-    
+
     echo -e "${GREEN}🎉 Deployment completed successfully!${NC}"
     echo -e "${BLUE}Don't forget to update your DNS records to point to the load balancer${NC}"
 }

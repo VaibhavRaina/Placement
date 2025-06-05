@@ -1,36 +1,55 @@
-# EKS Cluster Outputs
-output "cluster_name" {
-  description = "Name of the EKS cluster"
-  value       = aws_eks_cluster.main.name
+# Instance Outputs
+output "backend_instance_id" {
+  description = "ID of the backend instance"
+  value       = aws_instance.backend.id
 }
 
-output "cluster_endpoint" {
-  description = "EKS cluster endpoint"
-  value       = aws_eks_cluster.main.endpoint
+output "frontend_instance_id" {
+  description = "ID of the frontend instance"
+  value       = aws_instance.frontend.id
+}
+
+output "backend_public_ip" {
+  description = "Public IP of the backend instance"
+  value       = aws_instance.backend.public_ip
+}
+
+output "frontend_public_ip" {
+  description = "Public IP of the frontend instance"
+  value       = aws_instance.frontend.public_ip
+}
+
+output "mongodb_instance_id" {
+  description = "ID of the MongoDB instance"
+  value       = aws_instance.mongodb.id
+}
+
+output "mongodb_public_ip" {
+  description = "Public IP of the MongoDB instance"
+  value       = aws_instance.mongodb.public_ip
+}
+
+output "mongodb_private_ip" {
+  description = "Private IP of the MongoDB instance"
+  value       = aws_instance.mongodb.private_ip
+}
+
+# Application URL
+output "application_url" {
+  description = "Application URL"
+  value       = "http://${aws_lb.main.dns_name}"
+}
+
+output "load_balancer_dns" {
+  description = "Load Balancer DNS name"
+  value       = aws_lb.main.dns_name
+}
+
+# MongoDB Outputs
+output "mongodb_connection_string" {
+  description = "MongoDB connection string"
+  value       = "mongodb://${aws_instance.mongodb.public_ip}:27017/placement_db"
   sensitive   = true
-}
-
-output "cluster_ca_certificate" {
-  description = "EKS cluster CA certificate"
-  value       = aws_eks_cluster.main.certificate_authority[0].data
-  sensitive   = true
-}
-
-output "cluster_arn" {
-  description = "EKS cluster ARN"
-  value       = aws_eks_cluster.main.arn
-}
-
-# DocumentDB Outputs
-output "docdb_cluster_endpoint" {
-  description = "DocumentDB cluster endpoint"
-  value       = aws_docdb_cluster.main.endpoint
-  sensitive   = true
-}
-
-output "docdb_cluster_port" {
-  description = "DocumentDB cluster port"
-  value       = aws_docdb_cluster.main.port
 }
 
 # ECR Repository Outputs
@@ -44,11 +63,7 @@ output "frontend_repository_url" {
   value       = aws_ecr_repository.frontend.repository_url
 }
 
-# Load Balancer Output
-output "load_balancer_dns" {
-  description = "Application Load Balancer DNS name"
-  value       = aws_lb.main.dns_name
-}
+
 
 # Jenkins Instance Output
 output "jenkins_public_ip" {
@@ -90,8 +105,8 @@ output "public_subnet_ids" {
 
 # Database Connection String
 output "database_connection_string" {
-  description = "DocumentDB connection string"
-  value       = "mongodb://${var.db_username}:${var.db_password}@${aws_docdb_cluster.main.endpoint}:${aws_docdb_cluster.main.port}/placement-portal?ssl=true&replicaSet=rs0&readPreference=secondaryPreferred&retryWrites=false"
+  description = "MongoDB connection string"
+  value       = "mongodb://${aws_instance.mongodb.public_ip}:27017/placement_db"
   sensitive   = true
 }
 

@@ -22,34 +22,52 @@ variable "vpc_cidr" {
   default     = "10.0.0.0/16"
 }
 
-variable "eks_version" {
-  description = "EKS cluster version"
-  type        = string
-  default     = "1.29"
-}
-
-variable "node_instance_type" {
-  description = "EC2 instance type for EKS nodes"
+variable "backend_instance_type" {
+  description = "EC2 instance type for backend instances"
   type        = string
   default     = "t3.small"
 }
 
-variable "node_desired_size" {
-  description = "Desired number of EKS nodes"
-  type        = number
-  default     = 2
+variable "frontend_instance_type" {
+  description = "EC2 instance type for frontend instances"
+  type        = string
+  default     = "t3.micro"
 }
 
-variable "node_max_size" {
-  description = "Maximum number of EKS nodes"
+variable "backend_min_size" {
+  description = "Minimum number of backend instances"
+  type        = number
+  default     = 1
+}
+
+variable "backend_max_size" {
+  description = "Maximum number of backend instances"
   type        = number
   default     = 4
 }
 
-variable "node_min_size" {
-  description = "Minimum number of EKS nodes"
+variable "backend_desired_size" {
+  description = "Desired number of backend instances"
+  type        = number
+  default     = 2
+}
+
+variable "frontend_min_size" {
+  description = "Minimum number of frontend instances"
   type        = number
   default     = 1
+}
+
+variable "frontend_max_size" {
+  description = "Maximum number of frontend instances"
+  type        = number
+  default     = 3
+}
+
+variable "frontend_desired_size" {
+  description = "Desired number of frontend instances"
+  type        = number
+  default     = 2
 }
 
 variable "db_username" {
@@ -70,17 +88,7 @@ variable "db_instance_class" {
   default     = "db.t3.medium"
 }
 
-variable "jenkins_ami_id" {
-  description = "AMI ID for Jenkins instance"
-  type        = string
-  default     = "ami-0e001c9271cf7f3b9" # Ubuntu 22.04 LTS in us-east-1
-}
-
-variable "sonarqube_ami_id" {
-  description = "AMI ID for SonarQube instance"
-  type        = string
-  default     = "ami-0e001c9271cf7f3b9" # Ubuntu 22.04 LTS in us-east-1
-}
+# AMI IDs are now dynamically fetched using data sources
 
 variable "github_owner" {
   description = "GitHub repository owner"

@@ -6,10 +6,6 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.0"
     }
-    kubernetes = {
-      source  = "hashicorp/kubernetes"
-      version = "~> 2.0"
-    }
   }
 }
 
@@ -24,6 +20,38 @@ data "aws_availability_zones" "available" {
 
 # Data source for current AWS account ID
 data "aws_caller_identity" "current" {}
+
+# Data source for latest Ubuntu 22.04 LTS AMI
+data "aws_ami" "ubuntu" {
+  most_recent = true
+  owners      = ["099720109477"] # Canonical
+
+  filter {
+    name   = "name"
+    values = ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"]
+  }
+
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
+}
+
+# Data source for latest Amazon Linux 2023 AMI
+data "aws_ami" "amazon_linux" {
+  most_recent = true
+  owners      = ["amazon"]
+
+  filter {
+    name   = "name"
+    values = ["al2023-ami-*-x86_64"]
+  }
+
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
+}
 
 # VPC
 resource "aws_vpc" "main" {
@@ -152,203 +180,11 @@ resource "aws_route_table_association" "private" {
   route_table_id = aws_route_table.private[count.index].id
 }
 
-# Security Group for EKS Cluster
-resource "aws_security_group" "eks_cluster" {
-  name_prefix = "${var.project_name}-eks-cluster-"
-  vpc_id      = aws_vpc.main.id
 
-  ingress {
-    description = "HTTPS"
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
 
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
 
-  tags = {
-    Name        = "${var.project_name}-eks-cluster-sg"
-    Environment = var.environment
-  }
-}
 
-# Security Group for EKS Node Group
-resource "aws_security_group" "eks_nodes" {
-  name_prefix = "${var.project_name}-eks-nodes-"
-  vpc_id      = aws_vpc.main.id
 
-  ingress {
-    description = "All traffic from cluster"
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    self        = true
-  }
-
-  ingress {
-    description     = "All traffic from cluster security group"
-    from_port       = 0
-    to_port         = 0
-    protocol        = "-1"
-    security_groups = [aws_security_group.eks_cluster.id]
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = {
-    Name        = "${var.project_name}-eks-nodes-sg"
-    Environment = var.environment
-  }
-}
-
-# EKS Cluster IAM Role
-resource "aws_iam_role" "eks_cluster" {
-  name = "${var.project_name}-eks-cluster-role"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
-        Principal = {
-          Service = "eks.amazonaws.com"
-        }
-      }
-    ]
-  })
-
-  tags = {
-    Name        = "${var.project_name}-eks-cluster-role"
-    Environment = var.environment
-  }
-}
-
-resource "aws_iam_role_policy_attachment" "eks_cluster_policy" {
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
-  role       = aws_iam_role.eks_cluster.name
-}
-
-# EKS Node Group IAM Role
-resource "aws_iam_role" "eks_node_group" {
-  name = "${var.project_name}-eks-node-group-role"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
-        Principal = {
-          Service = "ec2.amazonaws.com"
-        }
-      }
-    ]
-  })
-
-  tags = {
-    Name        = "${var.project_name}-eks-node-group-role"
-    Environment = var.environment
-  }
-}
-
-resource "aws_iam_role_policy_attachment" "eks_worker_node_policy" {
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
-  role       = aws_iam_role.eks_node_group.name
-}
-
-resource "aws_iam_role_policy_attachment" "eks_cni_policy" {
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
-  role       = aws_iam_role.eks_node_group.name
-}
-
-resource "aws_iam_role_policy_attachment" "eks_container_registry_policy" {
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
-  role       = aws_iam_role.eks_node_group.name
-}
-
-# EKS Cluster
-resource "aws_eks_cluster" "main" {
-  name     = "${var.project_name}-cluster"
-  role_arn = aws_iam_role.eks_cluster.arn
-  version  = var.eks_version
-
-  vpc_config {
-    subnet_ids              = concat(aws_subnet.public[*].id, aws_subnet.private[*].id)
-    security_group_ids      = [aws_security_group.eks_cluster.id]
-    endpoint_private_access = true
-    endpoint_public_access  = true
-  }
-
-  enabled_cluster_log_types = ["api", "audit", "authenticator", "controllerManager", "scheduler"]
-
-  depends_on = [
-    aws_iam_role_policy_attachment.eks_cluster_policy,
-  ]
-
-  tags = {
-    Name        = "${var.project_name}-cluster"
-    Environment = var.environment
-  }
-}
-
-# EKS Node Group
-resource "aws_eks_node_group" "main" {
-  cluster_name    = aws_eks_cluster.main.name
-  node_group_name = "${var.project_name}-node-group"
-  node_role_arn   = aws_iam_role.eks_node_group.arn
-  subnet_ids      = aws_subnet.private[*].id
-
-  capacity_type  = "ON_DEMAND"
-  instance_types = [var.node_instance_type]
-
-  scaling_config {
-    desired_size = var.node_desired_size
-    max_size     = var.node_max_size
-    min_size     = var.node_min_size
-  }
-
-  update_config {
-    max_unavailable = 1
-  }
-
-  depends_on = [
-    aws_iam_role_policy_attachment.eks_worker_node_policy,
-    aws_iam_role_policy_attachment.eks_cni_policy,
-    aws_iam_role_policy_attachment.eks_container_registry_policy,
-  ]
-
-  tags = {
-    Name        = "${var.project_name}-node-group"
-    Environment = var.environment
-  }
-}
-
-# Kubernetes provider configuration
-data "aws_eks_cluster" "cluster" {
-  name = aws_eks_cluster.main.name
-}
-
-data "aws_eks_cluster_auth" "cluster" {
-  name = aws_eks_cluster.main.name
-}
-
-provider "kubernetes" {
-  host                   = data.aws_eks_cluster.cluster.endpoint
-  cluster_ca_certificate = base64decode(data.aws_eks_cluster.cluster.certificate_authority[0].data)
-  token                  = data.aws_eks_cluster_auth.cluster.token
-}
 
 # ECR Repository for Backend
 resource "aws_ecr_repository" "backend" {
@@ -380,73 +216,9 @@ resource "aws_ecr_repository" "frontend" {
   }
 }
 
-# RDS Subnet Group
-resource "aws_db_subnet_group" "main" {
-  name       = "${var.project_name}-db-subnet-group"
-  subnet_ids = aws_subnet.private[*].id
+# Note: RDS/DocumentDB resources removed in favor of MongoDB on EC2
 
-  tags = {
-    Name        = "${var.project_name}-db-subnet-group"
-    Environment = var.environment
-  }
-}
-
-# Security Group for RDS
-resource "aws_security_group" "rds" {
-  name_prefix = "${var.project_name}-rds-"
-  vpc_id      = aws_vpc.main.id
-
-  ingress {
-    description     = "MongoDB from EKS nodes"
-    from_port       = 27017
-    to_port         = 27017
-    protocol        = "tcp"
-    security_groups = [aws_security_group.eks_nodes.id]
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = {
-    Name        = "${var.project_name}-rds-sg"
-    Environment = var.environment
-  }
-}
-
-# DocumentDB (MongoDB-compatible) Cluster
-resource "aws_docdb_cluster" "main" {
-  cluster_identifier      = "${var.project_name}-docdb"
-  engine                  = "docdb"
-  master_username         = var.db_username
-  master_password         = var.db_password
-  backup_retention_period = 5
-  preferred_backup_window = "07:00-09:00"
-  skip_final_snapshot     = true
-  db_subnet_group_name    = aws_db_subnet_group.main.name
-  vpc_security_group_ids  = [aws_security_group.rds.id]
-
-  tags = {
-    Name        = "${var.project_name}-docdb"
-    Environment = var.environment
-  }
-}
-
-# DocumentDB Cluster Instance
-resource "aws_docdb_cluster_instance" "main" {
-  count              = 1
-  identifier         = "${var.project_name}-docdb-${count.index}"
-  cluster_identifier = aws_docdb_cluster.main.id
-  instance_class     = var.db_instance_class
-
-  tags = {
-    Name        = "${var.project_name}-docdb-${count.index}"
-    Environment = var.environment
-  }
-}
+# Note: DocumentDB removed in favor of MongoDB on EC2 for better compatibility and cost
 
 # Security Group for ALB
 resource "aws_security_group" "alb" {
@@ -482,6 +254,74 @@ resource "aws_security_group" "alb" {
   }
 }
 
+# Security Group for Backend Instances
+resource "aws_security_group" "backend" {
+  name_prefix = "${var.project_name}-backend-"
+  vpc_id      = aws_vpc.main.id
+
+  ingress {
+    description = "Backend API from anywhere"
+    from_port   = 5000
+    to_port     = 5000
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "SSH from anywhere"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name        = "${var.project_name}-backend-sg"
+    Environment = var.environment
+  }
+}
+
+# Security Group for Frontend Instances
+resource "aws_security_group" "frontend" {
+  name_prefix = "${var.project_name}-frontend-"
+  vpc_id      = aws_vpc.main.id
+
+  ingress {
+    description = "Frontend from anywhere"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "SSH from anywhere"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name        = "${var.project_name}-frontend-sg"
+    Environment = var.environment
+  }
+}
+
 # Application Load Balancer
 resource "aws_lb" "main" {
   name               = "${var.project_name}-alb"
@@ -498,14 +338,93 @@ resource "aws_lb" "main" {
   }
 }
 
+# Target Group for Backend
+resource "aws_lb_target_group" "backend" {
+  name     = "${var.project_name}-backend-tg"
+  port     = 5000
+  protocol = "HTTP"
+  vpc_id   = aws_vpc.main.id
+
+  health_check {
+    enabled             = true
+    healthy_threshold   = 2
+    interval            = 30
+    matcher             = "200"
+    path                = "/health"
+    port                = "traffic-port"
+    protocol            = "HTTP"
+    timeout             = 5
+    unhealthy_threshold = 2
+  }
+
+  tags = {
+    Name        = "${var.project_name}-backend-tg"
+    Environment = var.environment
+  }
+}
+
+# Target Group for Frontend
+resource "aws_lb_target_group" "frontend" {
+  name     = "${var.project_name}-frontend-tg"
+  port     = 80
+  protocol = "HTTP"
+  vpc_id   = aws_vpc.main.id
+
+  health_check {
+    enabled             = true
+    healthy_threshold   = 2
+    interval            = 30
+    matcher             = "200"
+    path                = "/"
+    port                = "traffic-port"
+    protocol            = "HTTP"
+    timeout             = 5
+    unhealthy_threshold = 2
+  }
+
+  tags = {
+    Name        = "${var.project_name}-frontend-tg"
+    Environment = var.environment
+  }
+}
+
+# ALB Listener
+resource "aws_lb_listener" "main" {
+  load_balancer_arn = aws_lb.main.arn
+  port              = "80"
+  protocol          = "HTTP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.frontend.arn
+  }
+}
+
+# ALB Listener Rule for Backend API
+resource "aws_lb_listener_rule" "backend" {
+  listener_arn = aws_lb_listener.main.arn
+  priority     = 100
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.backend.arn
+  }
+
+  condition {
+    path_pattern {
+      values = ["/api/*"]
+    }
+  }
+}
+
 # EC2 Instance for Jenkins
 resource "aws_instance" "jenkins" {
-  ami           = var.jenkins_ami_id
+  ami           = data.aws_ami.ubuntu.id
   instance_type = "t3.medium"  # 2 vCPU, 4 GB RAM - much better for Jenkins
   subnet_id     = aws_subnet.public[0].id
   vpc_security_group_ids = [aws_security_group.jenkins.id]
   key_name      = "placement-portal-key"
-  
+
   user_data = templatefile("${path.module}/scripts/jenkins-setup-ubuntu.sh", {
     aws_region = var.aws_region
   })
@@ -527,14 +446,34 @@ resource "aws_eip" "jenkins" {
   }
 }
 
+# EC2 Instance for MongoDB
+resource "aws_instance" "mongodb" {
+  ami           = data.aws_ami.ubuntu.id
+  instance_type = "t3.small"  # 2 vCPU, 2 GB RAM - good for MongoDB
+  subnet_id     = aws_subnet.public[0].id
+  vpc_security_group_ids = [aws_security_group.mongodb.id]
+  key_name      = "placement-portal-key"
+
+  user_data = templatefile("${path.module}/scripts/mongodb-setup.sh", {
+    db_username = var.db_username
+    db_password = var.db_password
+  })
+
+  tags = {
+    Name        = "${var.project_name}-mongodb"
+    Environment = var.environment
+    Type        = "database"
+  }
+}
+
 # EC2 Instance for SonarQube
 resource "aws_instance" "sonarqube" {
-  ami           = var.sonarqube_ami_id
+  ami           = data.aws_ami.ubuntu.id
   instance_type = "t3.medium"  # 2 vCPU, 4 GB RAM - much better for SonarQube
   subnet_id     = aws_subnet.public[1].id
   vpc_security_group_ids = [aws_security_group.sonarqube.id]
   key_name      = "placement-portal-key"
-  
+
   user_data = file("${path.module}/scripts/sonarqube-setup-ubuntu.sh")
 
   tags = {
@@ -550,6 +489,168 @@ resource "aws_eip" "sonarqube" {
 
   tags = {
     Name        = "${var.project_name}-sonarqube-eip"
+    Environment = var.environment
+  }
+}
+
+# IAM Role for Application Instances
+resource "aws_iam_role" "app_instance" {
+  name = "${var.project_name}-app-instance-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "ec2.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = {
+    Name        = "${var.project_name}-app-instance-role"
+    Environment = var.environment
+  }
+}
+
+# IAM Policy for Application Instances
+resource "aws_iam_policy" "app_instance" {
+  name = "${var.project_name}-app-instance-policy"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "ecr:GetAuthorizationToken",
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:BatchGetImage"
+        ]
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ]
+        Resource = "arn:aws:logs:*:*:*"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "app_instance" {
+  policy_arn = aws_iam_policy.app_instance.arn
+  role       = aws_iam_role.app_instance.name
+}
+
+# Instance Profile for Application Instances
+resource "aws_iam_instance_profile" "app_instance" {
+  name = "${var.project_name}-app-instance-profile"
+  role = aws_iam_role.app_instance.name
+}
+
+# EC2 Instance for Backend
+resource "aws_instance" "backend" {
+  ami           = data.aws_ami.ubuntu.id
+  instance_type = var.backend_instance_type
+  subnet_id     = aws_subnet.public[0].id
+  vpc_security_group_ids = [aws_security_group.backend.id]
+  key_name      = "placement-portal-key"
+  iam_instance_profile = aws_iam_instance_profile.app_instance.name
+
+  user_data = templatefile("${path.module}/scripts/backend-setup.sh", {
+    aws_region    = var.aws_region
+    ecr_registry  = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.aws_region}.amazonaws.com"
+    mongodb_uri   = "mongodb://${aws_instance.mongodb.public_ip}:27017/placement_db"
+    jwt_secret    = "your-super-secure-jwt-secret-key-here-min-32-chars"
+  })
+
+  depends_on = [aws_instance.mongodb]
+
+  tags = {
+    Name        = "${var.project_name}-backend"
+    Environment = var.environment
+    Type        = "backend"
+  }
+}
+
+# EC2 Instance for Frontend
+resource "aws_instance" "frontend" {
+  ami           = data.aws_ami.ubuntu.id
+  instance_type = var.frontend_instance_type
+  subnet_id     = aws_subnet.public[1].id
+  vpc_security_group_ids = [aws_security_group.frontend.id]
+  key_name      = "placement-portal-key"
+  iam_instance_profile = aws_iam_instance_profile.app_instance.name
+
+  user_data = templatefile("${path.module}/scripts/frontend-setup.sh", {
+    aws_region   = var.aws_region
+    ecr_registry = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.aws_region}.amazonaws.com"
+    backend_url  = "http://${aws_lb.main.dns_name}/api"
+    backend_ip   = aws_instance.backend.private_ip
+  })
+
+  depends_on = [aws_instance.backend]
+
+  tags = {
+    Name        = "${var.project_name}-frontend"
+    Environment = var.environment
+    Type        = "frontend"
+  }
+}
+
+# Attach Backend Instance to Target Group
+resource "aws_lb_target_group_attachment" "backend" {
+  target_group_arn = aws_lb_target_group.backend.arn
+  target_id        = aws_instance.backend.id
+  port             = 5000
+}
+
+# Attach Frontend Instance to Target Group
+resource "aws_lb_target_group_attachment" "frontend" {
+  target_group_arn = aws_lb_target_group.frontend.arn
+  target_id        = aws_instance.frontend.id
+  port             = 80
+}
+
+# Security Group for MongoDB
+resource "aws_security_group" "mongodb" {
+  name_prefix = "${var.project_name}-mongodb-"
+  vpc_id      = aws_vpc.main.id
+
+  ingress {
+    description = "MongoDB"
+    from_port   = 27017
+    to_port     = 27017
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "SSH"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name        = "${var.project_name}-mongodb-sg"
     Environment = var.environment
   }
 }
