@@ -7,8 +7,6 @@ pipeline {
         ECR_REGISTRY = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
         IMAGE_BACKEND = "${ECR_REGISTRY}/placement-portal-backend"
         IMAGE_FRONTEND = "${ECR_REGISTRY}/placement-portal-frontend"
-        BACKEND_ASG_NAME = 'placement-portal-backend-asg'
-        FRONTEND_ASG_NAME = 'placement-portal-frontend-asg'
         SONAR_HOST_URL = 'http://3.91.165.95:9000'
         PATH = "${env.PATH}:/usr/local/bin"
         AWS_DEFAULT_REGION = "${AWS_REGION}"
@@ -41,12 +39,23 @@ pipeline {
                     env.IMAGE_BACKEND = "${env.ECR_REGISTRY}/placement-portal-backend"
                     env.IMAGE_FRONTEND = "${env.ECR_REGISTRY}/placement-portal-frontend"
 
+                    // Get EC2 instance IDs for deployment
+                    env.BACKEND_INSTANCE_ID = sh(
+                        script: "aws ec2 describe-instances --filters 'Name=tag:Name,Values=placement-portal-backend' 'Name=instance-state-name,Values=running' --query 'Reservations[0].Instances[0].InstanceId' --output text --region ${env.AWS_REGION}",
+                        returnStdout: true
+                    ).trim()
+
+                    env.FRONTEND_INSTANCE_ID = sh(
+                        script: "aws ec2 describe-instances --filters 'Name=tag:Name,Values=placement-portal-frontend' 'Name=instance-state-name,Values=running' --query 'Reservations[0].Instances[0].InstanceId' --output text --region ${env.AWS_REGION}",
+                        returnStdout: true
+                    ).trim()
+
                     echo "AWS Account ID: ${env.AWS_ACCOUNT_ID}"
                     echo "ECR Registry: ${env.ECR_REGISTRY}"
                     echo "Backend Image: ${env.IMAGE_BACKEND}"
                     echo "Frontend Image: ${env.IMAGE_FRONTEND}"
-                    echo "Backend ASG: ${env.BACKEND_ASG_NAME}"
-                    echo "Frontend ASG: ${env.FRONTEND_ASG_NAME}"
+                    echo "Backend Instance ID: ${env.BACKEND_INSTANCE_ID}"
+                    echo "Frontend Instance ID: ${env.FRONTEND_INSTANCE_ID}"
                 }
             }
         }
@@ -230,21 +239,7 @@ pipeline {
                     echo "Backend Image: ${IMAGE_BACKEND}:${env.GIT_COMMIT_SHORT}"
                     echo "Frontend Image: ${IMAGE_FRONTEND}:${env.GIT_COMMIT_SHORT}"
 
-                    // Create staging launch templates with new image tags
-                    sh """
-                        aws ec2 create-launch-template-version \\
-                            --launch-template-name placement-portal-backend-staging \\
-                            --source-version \\\$Latest \\
-                            --launch-template-data '{
-                                "UserData": "'\$(echo "#!/bin/bash
-                                cd /opt/placement-backend
-                                export ECR_REGISTRY=${ECR_REGISTRY}
-                                export IMAGE_TAG=${env.GIT_COMMIT_SHORT}
-                                ./deploy.sh" | base64 -w 0)'"
-                            }' \\
-                            --region ${AWS_REGION} || echo "Staging template creation skipped"
-                    """
-
+                    echo "Note: Staging deployment skipped - using single instance deployment model"
                     echo "Staging deployment completed successfully"
                 }
             }
@@ -271,92 +266,91 @@ pipeline {
 
                     def deployer = userInput ?: 'Unknown'
                     echo "Production deployment approved by: ${deployer}"
-                    echo "Deploying to production Auto Scaling Groups"
+                    echo "Deploying to production EC2 instances"
                     echo "Backend Image: ${IMAGE_BACKEND}:${env.GIT_COMMIT_SHORT}"
                     echo "Frontend Image: ${IMAGE_FRONTEND}:${env.GIT_COMMIT_SHORT}"
 
-                    // Update backend launch template with new image
+                    // Deploy to backend instance
+                    echo "Deploying to backend instance: ${env.BACKEND_INSTANCE_ID}"
                     sh """
-                        aws ec2 create-launch-template-version \\
-                            --launch-template-name placement-portal-backend \\
-                            --source-version \\\$Latest \\
-                            --launch-template-data '{
-                                "UserData": "'\$(echo "#!/bin/bash
-                                cd /opt/placement-backend
-                                export ECR_REGISTRY=${ECR_REGISTRY}
-                                export IMAGE_TAG=${env.GIT_COMMIT_SHORT}
-                                ./deploy.sh" | base64 -w 0)'"
-                            }' \\
+                        aws ssm send-command \\
+                            --instance-ids ${env.BACKEND_INSTANCE_ID} \\
+                            --document-name "AWS-RunShellScript" \\
+                            --parameters 'commands=[
+                                "cd /opt/placement-backend",
+                                "export ECR_REGISTRY=${ECR_REGISTRY}",
+                                "export IMAGE_TAG=${env.GIT_COMMIT_SHORT}",
+                                "# Update docker-compose.yml with new image tag",
+                                "sed -i \"s|image: .*placement-portal-backend:.*|image: ${ECR_REGISTRY}/placement-portal-backend:${env.GIT_COMMIT_SHORT}|g\" docker-compose.yml",
+                                "./deploy.sh"
+                            ]' \\
                             --region ${AWS_REGION}
                     """
 
-                    // Update frontend launch template with new image
+                    // Deploy to frontend instance
+                    echo "Deploying to frontend instance: ${env.FRONTEND_INSTANCE_ID}"
                     sh """
-                        aws ec2 create-launch-template-version \\
-                            --launch-template-name placement-portal-frontend \\
-                            --source-version \\\$Latest \\
-                            --launch-template-data '{
-                                "UserData": "'\$(echo "#!/bin/bash
-                                cd /opt/placement-frontend
-                                export ECR_REGISTRY=${ECR_REGISTRY}
-                                export IMAGE_TAG=${env.GIT_COMMIT_SHORT}
-                                ./deploy.sh" | base64 -w 0)'"
-                            }' \\
+                        aws ssm send-command \\
+                            --instance-ids ${env.FRONTEND_INSTANCE_ID} \\
+                            --document-name "AWS-RunShellScript" \\
+                            --parameters 'commands=[
+                                "cd /opt/placement-frontend",
+                                "export ECR_REGISTRY=${ECR_REGISTRY}",
+                                "export IMAGE_TAG=${env.GIT_COMMIT_SHORT}",
+                                "# Update docker-compose.yml with new image tag",
+                                "sed -i \"s|image: .*placement-portal-frontend:.*|image: ${ECR_REGISTRY}/placement-portal-frontend:${env.GIT_COMMIT_SHORT}|g\" docker-compose.yml",
+                                "./deploy.sh"
+                            ]' \\
                             --region ${AWS_REGION}
                     """
 
-                    // Trigger rolling update for backend ASG
-                    sh """
-                        aws autoscaling start-instance-refresh \\
-                            --auto-scaling-group-name ${BACKEND_ASG_NAME} \\
-                            --preferences MinHealthyPercentage=50,InstanceWarmup=300 \\
-                            --region ${AWS_REGION}
-                    """
+                    // Wait for deployments to complete
+                    echo "Waiting for backend deployment to complete..."
+                    sleep 60  // Give time for deployment to start
 
-                    // Trigger rolling update for frontend ASG
+                    // Check backend health
                     sh """
-                        aws autoscaling start-instance-refresh \\
-                            --auto-scaling-group-name ${FRONTEND_ASG_NAME} \\
-                            --preferences MinHealthyPercentage=50,InstanceWarmup=300 \\
-                            --region ${AWS_REGION}
-                    """
+                        for i in {1..10}; do
+                            backend_ip=\$(aws ec2 describe-instances \\
+                                --instance-ids ${env.BACKEND_INSTANCE_ID} \\
+                                --query 'Reservations[0].Instances[0].PublicIpAddress' \\
+                                --output text --region ${AWS_REGION})
 
-                    // Wait for instance refresh to complete
-                    echo "Waiting for backend instance refresh to complete..."
-                    sh """
-                        while true; do
-                            status=\\\$(aws autoscaling describe-instance-refreshes \\
-                                --auto-scaling-group-name ${BACKEND_ASG_NAME} \\
-                                --region ${AWS_REGION} \\
-                                --query 'InstanceRefreshes[0].Status' \\
-                                --output text)
-                            echo "Backend refresh status: \\\$status"
-                            if [ "\\\$status" = "Successful" ]; then
+                            if curl -f -s http://\$backend_ip:5000/health > /dev/null; then
+                                echo "Backend health check passed"
                                 break
-                            elif [ "\\\$status" = "Failed" ] || [ "\\\$status" = "Cancelled" ]; then
-                                echo "Backend deployment failed with status: \\\$status"
-                                exit 1
+                            else
+                                echo "Backend health check failed, attempt \$i/10"
+                                if [ \$i -eq 10 ]; then
+                                    echo "Backend deployment failed - health check timeout"
+                                    exit 1
+                                fi
+                                sleep 30
                             fi
-                            sleep 30
                         done
                     """
 
-                    echo "Waiting for frontend instance refresh to complete..."
+                    echo "Waiting for frontend deployment to complete..."
+
+                    // Check frontend health
                     sh """
-                        while true; do
-                            status=\\\$(aws autoscaling describe-instance-refreshes \\
-                                --auto-scaling-group-name ${FRONTEND_ASG_NAME} \\
-                                --region ${AWS_REGION} \\
-                                --query 'InstanceRefreshes[0].Status' \\
-                                --output text)
-                            echo "Frontend refresh status: \\\$status"
-                            if [ "\\\$status" = "Successful" ]; then
+                        for i in {1..10}; do
+                            frontend_ip=\$(aws ec2 describe-instances \\
+                                --instance-ids ${env.FRONTEND_INSTANCE_ID} \\
+                                --query 'Reservations[0].Instances[0].PublicIpAddress' \\
+                                --output text --region ${AWS_REGION})
+
+                            if curl -f -s http://\$frontend_ip > /dev/null; then
+                                echo "Frontend health check passed"
                                 break
-                            elif [ "\\\$status" = "Failed" ] || [ "\\\$status" = "Cancelled" ]; then
-                                echo "Frontend deployment failed with status: \\\$status"
-                                exit 1
+                            else
+                                echo "Frontend health check failed, attempt \$i/10"
+                                if [ \$i -eq 10 ]; then
+                                    echo "Frontend deployment failed - health check timeout"
+                                    exit 1
+                                fi
+                                sleep 30
                             fi
-                            sleep 30
                         done
                     """
 

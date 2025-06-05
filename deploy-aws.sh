@@ -123,7 +123,12 @@ deploy_to_ec2() {
     echo -e "${BLUE}Deploying applications to EC2 instances...${NC}"
 
     # Check if this is initial deployment or update
-    if aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names placement-portal-backend-asg --region ${AWS_REGION} >/dev/null 2>&1; then
+    BACKEND_INSTANCE_ID=$(aws ec2 describe-instances \
+        --filters 'Name=tag:Name,Values=placement-portal-backend' 'Name=instance-state-name,Values=running' \
+        --query 'Reservations[0].Instances[0].InstanceId' \
+        --output text --region ${AWS_REGION} 2>/dev/null)
+
+    if [ "$BACKEND_INSTANCE_ID" != "None" ] && [ -n "$BACKEND_INSTANCE_ID" ]; then
         echo -e "${YELLOW}Infrastructure exists - using EC2 deployment script for updates${NC}"
         ./deploy-ec2.sh
     else
@@ -144,12 +149,18 @@ deploy_to_ec2() {
 check_deployment_status() {
     echo -e "${BLUE}Checking deployment status...${NC}"
 
-    # Check Auto Scaling Groups
-    echo -e "${YELLOW}Backend ASG Status:${NC}"
-    aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names placement-portal-backend-asg --region ${AWS_REGION} --query 'AutoScalingGroups[0].{DesiredCapacity:DesiredCapacity,MinSize:MinSize,MaxSize:MaxSize,Instances:length(Instances)}' --output table
+    # Check EC2 instances
+    echo -e "${YELLOW}Backend Instance Status:${NC}"
+    aws ec2 describe-instances \
+        --filters 'Name=tag:Name,Values=placement-portal-backend' 'Name=instance-state-name,Values=running' \
+        --query 'Reservations[0].Instances[0].{InstanceId:InstanceId,State:State.Name,PublicIP:PublicIpAddress,PrivateIP:PrivateIpAddress}' \
+        --output table --region ${AWS_REGION}
 
-    echo -e "${YELLOW}Frontend ASG Status:${NC}"
-    aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names placement-portal-frontend-asg --region ${AWS_REGION} --query 'AutoScalingGroups[0].{DesiredCapacity:DesiredCapacity,MinSize:MinSize,MaxSize:MaxSize,Instances:length(Instances)}' --output table
+    echo -e "${YELLOW}Frontend Instance Status:${NC}"
+    aws ec2 describe-instances \
+        --filters 'Name=tag:Name,Values=placement-portal-frontend' 'Name=instance-state-name,Values=running' \
+        --query 'Reservations[0].Instances[0].{InstanceId:InstanceId,State:State.Name,PublicIP:PublicIpAddress,PrivateIP:PrivateIpAddress}' \
+        --output table --region ${AWS_REGION}
 
     # Check target group health
     echo -e "${YELLOW}Target Group Health:${NC}"

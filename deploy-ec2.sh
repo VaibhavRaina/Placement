@@ -143,55 +143,79 @@ export IMAGE_TAG=$IMAGE_TAG
     fi
 }
 
-# Function to check if ASGs exist
-check_auto_scaling_groups() {
-    print_status "Checking if Auto Scaling Groups exist..."
+# Function to check if EC2 instances exist
+check_ec2_instances() {
+    print_status "Checking if EC2 instances exist..."
 
-    # Check if backend ASG exists
-    if aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names placement-portal-backend-asg --region $AWS_REGION >/dev/null 2>&1; then
-        print_success "Backend ASG exists"
-        BACKEND_ASG_EXISTS=true
+    # Check if backend instance exists
+    BACKEND_INSTANCE_ID=$(aws ec2 describe-instances \
+        --filters 'Name=tag:Name,Values=placement-portal-backend' 'Name=instance-state-name,Values=running' \
+        --query 'Reservations[0].Instances[0].InstanceId' \
+        --output text --region $AWS_REGION 2>/dev/null)
+
+    if [ "$BACKEND_INSTANCE_ID" != "None" ] && [ -n "$BACKEND_INSTANCE_ID" ]; then
+        print_success "Backend instance exists: $BACKEND_INSTANCE_ID"
+        BACKEND_INSTANCE_EXISTS=true
     else
-        print_warning "Backend ASG does not exist - will be created by Terraform"
-        BACKEND_ASG_EXISTS=false
+        print_warning "Backend instance does not exist - will be created by Terraform"
+        BACKEND_INSTANCE_EXISTS=false
     fi
 
-    # Check if frontend ASG exists
-    if aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names placement-portal-frontend-asg --region $AWS_REGION >/dev/null 2>&1; then
-        print_success "Frontend ASG exists"
-        FRONTEND_ASG_EXISTS=true
+    # Check if frontend instance exists
+    FRONTEND_INSTANCE_ID=$(aws ec2 describe-instances \
+        --filters 'Name=tag:Name,Values=placement-portal-frontend' 'Name=instance-state-name,Values=running' \
+        --query 'Reservations[0].Instances[0].InstanceId' \
+        --output text --region $AWS_REGION 2>/dev/null)
+
+    if [ "$FRONTEND_INSTANCE_ID" != "None" ] && [ -n "$FRONTEND_INSTANCE_ID" ]; then
+        print_success "Frontend instance exists: $FRONTEND_INSTANCE_ID"
+        FRONTEND_INSTANCE_EXISTS=true
     else
-        print_warning "Frontend ASG does not exist - will be created by Terraform"
-        FRONTEND_ASG_EXISTS=false
+        print_warning "Frontend instance does not exist - will be created by Terraform"
+        FRONTEND_INSTANCE_EXISTS=false
     fi
 }
 
-# Function to trigger rolling deployment (only if ASGs exist)
-trigger_rolling_deployment() {
-    print_status "Triggering rolling deployment..."
+# Function to trigger direct EC2 deployment
+trigger_ec2_deployment() {
+    print_status "Triggering EC2 deployment..."
 
-    if [ "$BACKEND_ASG_EXISTS" = true ] && [ "$BACKEND_LT_EXISTS" = true ]; then
-        # Start instance refresh for backend ASG
-        print_status "Starting backend instance refresh..."
-        aws autoscaling start-instance-refresh \
-            --auto-scaling-group-name placement-portal-backend-asg \
-            --preferences MinHealthyPercentage=50,InstanceWarmup=300 \
+    if [ "$BACKEND_INSTANCE_EXISTS" = true ]; then
+        # Deploy to backend instance
+        print_status "Deploying to backend instance: $BACKEND_INSTANCE_ID"
+        aws ssm send-command \
+            --instance-ids $BACKEND_INSTANCE_ID \
+            --document-name "AWS-RunShellScript" \
+            --parameters "commands=[
+                'cd /opt/placement-backend',
+                'export ECR_REGISTRY=$ECR_REGISTRY',
+                'export IMAGE_TAG=$IMAGE_TAG',
+                'sed -i \"s|image: .*placement-portal-backend:.*|image: $ECR_REGISTRY/placement-portal-backend:$IMAGE_TAG|g\" docker-compose.yml',
+                './deploy.sh'
+            ]" \
             --region $AWS_REGION
-        print_success "Backend instance refresh initiated"
+        print_success "Backend deployment command sent"
     else
-        print_warning "Skipping backend deployment - ASG or launch template doesn't exist yet"
+        print_warning "Skipping backend deployment - instance doesn't exist yet"
     fi
 
-    if [ "$FRONTEND_ASG_EXISTS" = true ] && [ "$FRONTEND_LT_EXISTS" = true ]; then
-        # Start instance refresh for frontend ASG
-        print_status "Starting frontend instance refresh..."
-        aws autoscaling start-instance-refresh \
-            --auto-scaling-group-name placement-portal-frontend-asg \
-            --preferences MinHealthyPercentage=50,InstanceWarmup=300 \
+    if [ "$FRONTEND_INSTANCE_EXISTS" = true ]; then
+        # Deploy to frontend instance
+        print_status "Deploying to frontend instance: $FRONTEND_INSTANCE_ID"
+        aws ssm send-command \
+            --instance-ids $FRONTEND_INSTANCE_ID \
+            --document-name "AWS-RunShellScript" \
+            --parameters "commands=[
+                'cd /opt/placement-frontend',
+                'export ECR_REGISTRY=$ECR_REGISTRY',
+                'export IMAGE_TAG=$IMAGE_TAG',
+                'sed -i \"s|image: .*placement-portal-frontend:.*|image: $ECR_REGISTRY/placement-portal-frontend:$IMAGE_TAG|g\" docker-compose.yml',
+                './deploy.sh'
+            ]" \
             --region $AWS_REGION
-        print_success "Frontend instance refresh initiated"
+        print_success "Frontend deployment command sent"
     else
-        print_warning "Skipping frontend deployment - ASG or launch template doesn't exist yet"
+        print_warning "Skipping frontend deployment - instance doesn't exist yet"
     fi
 }
 
@@ -199,98 +223,96 @@ trigger_rolling_deployment() {
 wait_for_deployment() {
     print_status "Waiting for deployment to complete..."
 
-    if [ "$BACKEND_ASG_EXISTS" = true ] && [ "$BACKEND_LT_EXISTS" = true ]; then
+    # Give time for deployment to start
+    sleep 60
+
+    if [ "$BACKEND_INSTANCE_EXISTS" = true ]; then
         # Wait for backend deployment
         print_status "Monitoring backend deployment..."
-        while true; do
-            status=$(aws autoscaling describe-instance-refreshes \
-                --auto-scaling-group-name placement-portal-backend-asg \
-                --region $AWS_REGION \
-                --query 'InstanceRefreshes[0].Status' \
-                --output text 2>/dev/null)
 
-            if [ "$status" = "None" ] || [ -z "$status" ]; then
-                print_warning "No active backend instance refresh found"
+        # Get backend instance IP
+        BACKEND_IP=$(aws ec2 describe-instances \
+            --instance-ids $BACKEND_INSTANCE_ID \
+            --query 'Reservations[0].Instances[0].PublicIpAddress' \
+            --output text --region $AWS_REGION)
+
+        # Health check loop
+        for i in {1..10}; do
+            if curl -f -s http://$BACKEND_IP:5000/health > /dev/null; then
+                print_success "Backend health check passed"
                 break
+            else
+                echo "Backend health check failed, attempt $i/10"
+                if [ $i -eq 10 ]; then
+                    print_error "Backend deployment failed - health check timeout"
+                    exit 1
+                fi
+                sleep 30
             fi
-
-            echo "Backend refresh status: $status"
-
-            if [ "$status" = "Successful" ]; then
-                print_success "Backend deployment completed successfully"
-                break
-            elif [ "$status" = "Failed" ] || [ "$status" = "Cancelled" ]; then
-                print_error "Backend deployment failed with status: $status"
-                exit 1
-            fi
-
-            sleep 30
         done
     else
-        print_warning "Skipping backend deployment monitoring - ASG or launch template doesn't exist"
+        print_warning "Skipping backend deployment monitoring - instance doesn't exist"
     fi
 
-    if [ "$FRONTEND_ASG_EXISTS" = true ] && [ "$FRONTEND_LT_EXISTS" = true ]; then
+    if [ "$FRONTEND_INSTANCE_EXISTS" = true ]; then
         # Wait for frontend deployment
         print_status "Monitoring frontend deployment..."
-        while true; do
-            status=$(aws autoscaling describe-instance-refreshes \
-                --auto-scaling-group-name placement-portal-frontend-asg \
-                --region $AWS_REGION \
-                --query 'InstanceRefreshes[0].Status' \
-                --output text 2>/dev/null)
 
-            if [ "$status" = "None" ] || [ -z "$status" ]; then
-                print_warning "No active frontend instance refresh found"
+        # Get frontend instance IP
+        FRONTEND_IP=$(aws ec2 describe-instances \
+            --instance-ids $FRONTEND_INSTANCE_ID \
+            --query 'Reservations[0].Instances[0].PublicIpAddress' \
+            --output text --region $AWS_REGION)
+
+        # Health check loop
+        for i in {1..10}; do
+            if curl -f -s http://$FRONTEND_IP > /dev/null; then
+                print_success "Frontend health check passed"
                 break
+            else
+                echo "Frontend health check failed, attempt $i/10"
+                if [ $i -eq 10 ]; then
+                    print_error "Frontend deployment failed - health check timeout"
+                    exit 1
+                fi
+                sleep 30
             fi
-
-            echo "Frontend refresh status: $status"
-
-            if [ "$status" = "Successful" ]; then
-                print_success "Frontend deployment completed successfully"
-                break
-            elif [ "$status" = "Failed" ] || [ "$status" = "Cancelled" ]; then
-                print_error "Frontend deployment failed with status: $status"
-                exit 1
-            fi
-
-            sleep 30
         done
     else
-        print_warning "Skipping frontend deployment monitoring - ASG or launch template doesn't exist"
+        print_warning "Skipping frontend deployment monitoring - instance doesn't exist"
     fi
 }
 
 # Function to show deployment status
 show_deployment_status() {
     print_status "Deployment Status:"
-    
+
     # Get load balancer DNS
     LB_DNS=$(aws elbv2 describe-load-balancers \
         --names placement-portal-alb \
         --region $AWS_REGION \
         --query 'LoadBalancers[0].DNSName' \
         --output text)
-    
-    # Get ASG instance counts
-    BACKEND_INSTANCES=$(aws autoscaling describe-auto-scaling-groups \
-        --auto-scaling-group-names placement-portal-backend-asg \
-        --region $AWS_REGION \
-        --query 'AutoScalingGroups[0].Instances | length(@)')
-    
-    FRONTEND_INSTANCES=$(aws autoscaling describe-auto-scaling-groups \
-        --auto-scaling-group-names placement-portal-frontend-asg \
-        --region $AWS_REGION \
-        --query 'AutoScalingGroups[0].Instances | length(@)')
-    
+
+    # Get instance status
+    BACKEND_STATUS="Not Found"
+    FRONTEND_STATUS="Not Found"
+
+    if [ "$BACKEND_INSTANCE_EXISTS" = true ]; then
+        BACKEND_STATUS="Running ($BACKEND_INSTANCE_ID)"
+    fi
+
+    if [ "$FRONTEND_INSTANCE_EXISTS" = true ]; then
+        FRONTEND_STATUS="Running ($FRONTEND_INSTANCE_ID)"
+    fi
+
     echo ""
     echo "=========================================="
     print_success "Deployment completed successfully!"
     echo "=========================================="
     echo "Application URL: http://$LB_DNS"
-    echo "Backend instances: $BACKEND_INSTANCES"
-    echo "Frontend instances: $FRONTEND_INSTANCES"
+    echo "Backend instance: $BACKEND_STATUS"
+    echo "Frontend instance: $FRONTEND_STATUS"
     echo "Image tag: $IMAGE_TAG"
     echo "=========================================="
 }
@@ -301,9 +323,9 @@ main() {
     ecr_login
     build_and_push_images
     check_launch_templates
-    check_auto_scaling_groups
+    check_ec2_instances
     update_launch_templates
-    trigger_rolling_deployment
+    trigger_ec2_deployment
     wait_for_deployment
     show_deployment_status
 }
