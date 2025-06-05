@@ -186,13 +186,7 @@ trigger_ec2_deployment() {
         aws ssm send-command \
             --instance-ids $BACKEND_INSTANCE_ID \
             --document-name "AWS-RunShellScript" \
-            --parameters "commands=[
-                'cd /opt/placement-backend',
-                'export ECR_REGISTRY=$ECR_REGISTRY',
-                'export IMAGE_TAG=$IMAGE_TAG',
-                'sed -i \"s|image: .*placement-portal-backend:.*|image: $ECR_REGISTRY/placement-portal-backend:$IMAGE_TAG|g\" docker-compose.yml',
-                './deploy.sh'
-            ]" \
+            --parameters '{"commands":["cd /opt/placement-backend","export ECR_REGISTRY='$ECR_REGISTRY'","export IMAGE_TAG='$IMAGE_TAG'","sed -i \"s|image: .*placement-portal-backend:.*|image: '$ECR_REGISTRY'/placement-portal-backend:'$IMAGE_TAG'|g\" docker-compose.yml","./deploy.sh"]}' \
             --region $AWS_REGION
         print_success "Backend deployment command sent"
     else
@@ -205,13 +199,7 @@ trigger_ec2_deployment() {
         aws ssm send-command \
             --instance-ids $FRONTEND_INSTANCE_ID \
             --document-name "AWS-RunShellScript" \
-            --parameters "commands=[
-                'cd /opt/placement-frontend',
-                'export ECR_REGISTRY=$ECR_REGISTRY',
-                'export IMAGE_TAG=$IMAGE_TAG',
-                'sed -i \"s|image: .*placement-portal-frontend:.*|image: $ECR_REGISTRY/placement-portal-frontend:$IMAGE_TAG|g\" docker-compose.yml',
-                './deploy.sh'
-            ]" \
+            --parameters '{"commands":["cd /opt/placement-frontend","export ECR_REGISTRY='$ECR_REGISTRY'","export IMAGE_TAG='$IMAGE_TAG'","sed -i \"s|image: .*placement-portal-frontend:.*|image: '$ECR_REGISTRY'/placement-portal-frontend:'$IMAGE_TAG'|g\" docker-compose.yml","./deploy.sh"]}' \
             --region $AWS_REGION
         print_success "Frontend deployment command sent"
     else

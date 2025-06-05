@@ -276,14 +276,7 @@ pipeline {
                         aws ssm send-command \\
                             --instance-ids ${env.BACKEND_INSTANCE_ID} \\
                             --document-name "AWS-RunShellScript" \\
-                            --parameters 'commands=[
-                                "cd /opt/placement-backend",
-                                "export ECR_REGISTRY=${ECR_REGISTRY}",
-                                "export IMAGE_TAG=${env.GIT_COMMIT_SHORT}",
-                                "# Update docker-compose.yml with new image tag",
-                                "sed -i \"s|image: .*placement-portal-backend:.*|image: ${ECR_REGISTRY}/placement-portal-backend:${env.GIT_COMMIT_SHORT}|g\" docker-compose.yml",
-                                "./deploy.sh"
-                            ]' \\
+                            --parameters '{"commands":["cd /opt/placement-backend","export ECR_REGISTRY=${ECR_REGISTRY}","export IMAGE_TAG=${env.GIT_COMMIT_SHORT}","sed -i \\"s|image: .*placement-portal-backend:.*|image: ${ECR_REGISTRY}/placement-portal-backend:${env.GIT_COMMIT_SHORT}|g\\" docker-compose.yml","./deploy.sh"]}' \\
                             --region ${AWS_REGION}
                     """
 
@@ -293,14 +286,7 @@ pipeline {
                         aws ssm send-command \\
                             --instance-ids ${env.FRONTEND_INSTANCE_ID} \\
                             --document-name "AWS-RunShellScript" \\
-                            --parameters 'commands=[
-                                "cd /opt/placement-frontend",
-                                "export ECR_REGISTRY=${ECR_REGISTRY}",
-                                "export IMAGE_TAG=${env.GIT_COMMIT_SHORT}",
-                                "# Update docker-compose.yml with new image tag",
-                                "sed -i \"s|image: .*placement-portal-frontend:.*|image: ${ECR_REGISTRY}/placement-portal-frontend:${env.GIT_COMMIT_SHORT}|g\" docker-compose.yml",
-                                "./deploy.sh"
-                            ]' \\
+                            --parameters '{"commands":["cd /opt/placement-frontend","export ECR_REGISTRY=${ECR_REGISTRY}","export IMAGE_TAG=${env.GIT_COMMIT_SHORT}","sed -i \\"s|image: .*placement-portal-frontend:.*|image: ${ECR_REGISTRY}/placement-portal-frontend:${env.GIT_COMMIT_SHORT}|g\\" docker-compose.yml","./deploy.sh"]}' \\
                             --region ${AWS_REGION}
                     """
 
