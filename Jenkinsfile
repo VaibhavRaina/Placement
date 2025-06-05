@@ -266,10 +266,11 @@ pipeline {
             steps {
                 script {
                     // Manual approval for production deployment
-                    input message: 'Deploy to Production?', ok: 'Deploy',
+                    def userInput = input message: 'Deploy to Production?', ok: 'Deploy',
                           submitterParameter: 'DEPLOYER'
 
-                    echo "Production deployment approved by: ${DEPLOYER}"
+                    def deployer = userInput ?: 'Unknown'
+                    echo "Production deployment approved by: ${deployer}"
                     echo "Deploying to production Auto Scaling Groups"
                     echo "Backend Image: ${IMAGE_BACKEND}:${env.GIT_COMMIT_SHORT}"
                     echo "Frontend Image: ${IMAGE_FRONTEND}:${env.GIT_COMMIT_SHORT}"
