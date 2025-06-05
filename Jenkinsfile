@@ -7,6 +7,8 @@ pipeline {
         ECR_REGISTRY = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
         IMAGE_BACKEND = "${ECR_REGISTRY}/placement-portal-backend"
         IMAGE_FRONTEND = "${ECR_REGISTRY}/placement-portal-frontend"
+        BACKEND_ASG_NAME = 'placement-portal-backend-asg'
+        FRONTEND_ASG_NAME = 'placement-portal-frontend-asg'
         SONAR_HOST_URL = 'http://3.91.165.95:9000'
         PATH = "${env.PATH}:/usr/local/bin"
         AWS_DEFAULT_REGION = "${AWS_REGION}"
@@ -232,9 +234,9 @@ pipeline {
                     sh """
                         aws ec2 create-launch-template-version \\
                             --launch-template-name placement-portal-backend-staging \\
-                            --source-version \$Latest \\
+                            --source-version \\\$Latest \\
                             --launch-template-data '{
-                                "UserData": "'$(echo "#!/bin/bash
+                                "UserData": "'\$(echo "#!/bin/bash
                                 cd /opt/placement-backend
                                 export ECR_REGISTRY=${ECR_REGISTRY}
                                 export IMAGE_TAG=${env.GIT_COMMIT_SHORT}
@@ -276,9 +278,9 @@ pipeline {
                     sh """
                         aws ec2 create-launch-template-version \\
                             --launch-template-name placement-portal-backend \\
-                            --source-version \$Latest \\
+                            --source-version \\\$Latest \\
                             --launch-template-data '{
-                                "UserData": "'$(echo "#!/bin/bash
+                                "UserData": "'\$(echo "#!/bin/bash
                                 cd /opt/placement-backend
                                 export ECR_REGISTRY=${ECR_REGISTRY}
                                 export IMAGE_TAG=${env.GIT_COMMIT_SHORT}
@@ -291,9 +293,9 @@ pipeline {
                     sh """
                         aws ec2 create-launch-template-version \\
                             --launch-template-name placement-portal-frontend \\
-                            --source-version \$Latest \\
+                            --source-version \\\$Latest \\
                             --launch-template-data '{
-                                "UserData": "'$(echo "#!/bin/bash
+                                "UserData": "'\$(echo "#!/bin/bash
                                 cd /opt/placement-frontend
                                 export ECR_REGISTRY=${ECR_REGISTRY}
                                 export IMAGE_TAG=${env.GIT_COMMIT_SHORT}
@@ -322,16 +324,16 @@ pipeline {
                     echo "Waiting for backend instance refresh to complete..."
                     sh """
                         while true; do
-                            status=\$(aws autoscaling describe-instance-refreshes \\
+                            status=\\\$(aws autoscaling describe-instance-refreshes \\
                                 --auto-scaling-group-name ${BACKEND_ASG_NAME} \\
                                 --region ${AWS_REGION} \\
                                 --query 'InstanceRefreshes[0].Status' \\
                                 --output text)
-                            echo "Backend refresh status: \$status"
-                            if [ "\$status" = "Successful" ]; then
+                            echo "Backend refresh status: \\\$status"
+                            if [ "\\\$status" = "Successful" ]; then
                                 break
-                            elif [ "\$status" = "Failed" ] || [ "\$status" = "Cancelled" ]; then
-                                echo "Backend deployment failed with status: \$status"
+                            elif [ "\\\$status" = "Failed" ] || [ "\\\$status" = "Cancelled" ]; then
+                                echo "Backend deployment failed with status: \\\$status"
                                 exit 1
                             fi
                             sleep 30
@@ -341,16 +343,16 @@ pipeline {
                     echo "Waiting for frontend instance refresh to complete..."
                     sh """
                         while true; do
-                            status=\$(aws autoscaling describe-instance-refreshes \\
+                            status=\\\$(aws autoscaling describe-instance-refreshes \\
                                 --auto-scaling-group-name ${FRONTEND_ASG_NAME} \\
                                 --region ${AWS_REGION} \\
                                 --query 'InstanceRefreshes[0].Status' \\
                                 --output text)
-                            echo "Frontend refresh status: \$status"
-                            if [ "\$status" = "Successful" ]; then
+                            echo "Frontend refresh status: \\\$status"
+                            if [ "\\\$status" = "Successful" ]; then
                                 break
-                            elif [ "\$status" = "Failed" ] || [ "\$status" = "Cancelled" ]; then
-                                echo "Frontend deployment failed with status: \$status"
+                            elif [ "\\\$status" = "Failed" ] || [ "\\\$status" = "Cancelled" ]; then
+                                echo "Frontend deployment failed with status: \\\$status"
                                 exit 1
                             fi
                             sleep 30
