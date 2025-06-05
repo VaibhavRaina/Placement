@@ -541,6 +541,24 @@ resource "aws_iam_policy" "app_instance" {
           "logs:PutLogEvents"
         ]
         Resource = "arn:aws:logs:*:*:*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "ssm:UpdateInstanceInformation",
+          "ssm:SendCommand",
+          "ssm:ListCommands",
+          "ssm:ListCommandInvocations",
+          "ssm:DescribeInstanceInformation",
+          "ssm:GetCommandInvocation",
+          "ec2messages:AcknowledgeMessage",
+          "ec2messages:DeleteMessage",
+          "ec2messages:FailMessage",
+          "ec2messages:GetEndpoint",
+          "ec2messages:GetMessages",
+          "ec2messages:SendReply"
+        ]
+        Resource = "*"
       }
     ]
   })
@@ -548,6 +566,12 @@ resource "aws_iam_policy" "app_instance" {
 
 resource "aws_iam_role_policy_attachment" "app_instance" {
   policy_arn = aws_iam_policy.app_instance.arn
+  role       = aws_iam_role.app_instance.name
+}
+
+# Attach AWS managed SSM policy for application instances
+resource "aws_iam_role_policy_attachment" "app_instance_ssm" {
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
   role       = aws_iam_role.app_instance.name
 }
 
