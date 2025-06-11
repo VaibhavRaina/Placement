@@ -482,6 +482,17 @@ resource "aws_instance" "sonarqube" {
   }
 }
 
+# Elastic IP for MongoDB
+resource "aws_eip" "mongodb" {
+  instance = aws_instance.mongodb.id
+  domain   = "vpc"
+
+  tags = {
+    Name        = "${var.project_name}-mongodb-eip"
+    Environment = var.environment
+  }
+}
+
 # Elastic IP for SonarQube
 resource "aws_eip" "sonarqube" {
   instance = aws_instance.sonarqube.id
@@ -593,11 +604,11 @@ resource "aws_instance" "backend" {
   user_data = templatefile("${path.module}/scripts/backend-setup.sh", {
     aws_region    = var.aws_region
     ecr_registry  = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.aws_region}.amazonaws.com"
-    mongodb_uri   = "mongodb://${aws_instance.mongodb.public_ip}:27017/placement_db"
+    mongodb_uri   = "mongodb://${aws_eip.mongodb.public_ip}:27017/placement_db"
     jwt_secret    = "your-super-secure-jwt-secret-key-here-min-32-chars"
   })
 
-  depends_on = [aws_instance.mongodb]
+  depends_on = [aws_instance.mongodb, aws_eip.mongodb]
 
   tags = {
     Name        = "${var.project_name}-backend"

@@ -25,8 +25,8 @@ output "mongodb_instance_id" {
 }
 
 output "mongodb_public_ip" {
-  description = "Public IP of the MongoDB instance"
-  value       = aws_instance.mongodb.public_ip
+  description = "Public IP of the MongoDB instance (Static IP)"
+  value       = aws_eip.mongodb.public_ip
 }
 
 output "mongodb_private_ip" {
@@ -47,8 +47,8 @@ output "load_balancer_dns" {
 
 # MongoDB Outputs
 output "mongodb_connection_string" {
-  description = "MongoDB connection string"
-  value       = "mongodb://${aws_instance.mongodb.public_ip}:27017/placement_db"
+  description = "MongoDB connection string (Static IP)"
+  value       = "mongodb://${aws_eip.mongodb.public_ip}:27017/placement_db"
   sensitive   = true
 }
 
@@ -105,8 +105,8 @@ output "public_subnet_ids" {
 
 # Database Connection String
 output "database_connection_string" {
-  description = "MongoDB connection string"
-  value       = "mongodb://${aws_instance.mongodb.public_ip}:27017/placement_db"
+  description = "MongoDB connection string (Static IP)"
+  value       = "mongodb://${aws_eip.mongodb.public_ip}:27017/placement_db"
   sensitive   = true
 }
 
