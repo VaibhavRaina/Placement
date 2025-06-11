@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
-import { BRANCHES, Branch, JOB_TYPES, JobType } from '../../types';
+import { BRANCHES, Branch, JobType } from '../../types';
 import toast from 'react-hot-toast';
 import { noticeAPI } from '../../lib/api';
-import { Check, X } from 'lucide-react';
+import { Check, X, Briefcase, GraduationCap, FileText, Users } from 'lucide-react';
 
 // Package unit and frequency options
 const PACKAGE_UNITS = ['LPA', 'K'];
@@ -13,7 +13,44 @@ const PACKAGE_FREQUENCIES = ['Monthly', 'Yearly'];
 // All available semesters
 const ALL_SEMESTERS = [1, 2, 3, 4, 5, 6, 7, 8];
 
+// Tab configuration
+const JOB_TYPE_TABS = [
+  {
+    id: 'fulltime',
+    label: 'Full-Time Jobs',
+    icon: Briefcase,
+    jobType: JobType.FULLTIME,
+    color: 'blue',
+    description: 'Post full-time job opportunities'
+  },
+  {
+    id: 'internship',
+    label: 'Internships',
+    icon: GraduationCap,
+    jobType: JobType.INTERNSHIP,
+    color: 'purple',
+    description: 'Post internship opportunities'
+  },
+  {
+    id: 'internship-fte',
+    label: 'Internship + FTE',
+    icon: Users,
+    jobType: JobType.INTERNSHIP_FTE,
+    color: 'indigo',
+    description: 'Post internship with full-time conversion'
+  },
+  {
+    id: 'contract',
+    label: 'Contract',
+    icon: FileText,
+    jobType: JobType.CONTRACT,
+    color: 'orange',
+    description: 'Post contract-based opportunities'
+  }
+];
+
 export function PlacementNews() {
+  const [activeTab, setActiveTab] = useState('fulltime');
   const [isLoading, setIsLoading] = useState(false);
   const [formData, setFormData] = useState({
     companyName: '',
@@ -29,6 +66,33 @@ export function PlacementNews() {
     minCGPA: '',
     maxCGPA: ''
   });
+
+  // Update job type when tab changes
+  const handleTabChange = (tabId: string) => {
+    setActiveTab(tabId);
+    const selectedTab = JOB_TYPE_TABS.find(tab => tab.id === tabId);
+    if (selectedTab) {
+      setFormData(prev => ({ ...prev, jobType: selectedTab.jobType }));
+    }
+  };
+
+  const getTabColorClasses = (color: string, isActive: boolean) => {
+    const colorMap = {
+      blue: isActive 
+        ? 'bg-blue-100 border-blue-500 text-blue-700' 
+        : 'bg-white border-gray-200 text-gray-500 hover:text-blue-600 hover:border-blue-300',
+      purple: isActive 
+        ? 'bg-purple-100 border-purple-500 text-purple-700' 
+        : 'bg-white border-gray-200 text-gray-500 hover:text-purple-600 hover:border-purple-300',
+      indigo: isActive 
+        ? 'bg-indigo-100 border-indigo-500 text-indigo-700' 
+        : 'bg-white border-gray-200 text-gray-500 hover:text-indigo-600 hover:border-indigo-300',
+      orange: isActive 
+        ? 'bg-orange-100 border-orange-500 text-orange-700' 
+        : 'bg-white border-gray-200 text-gray-500 hover:text-orange-600 hover:border-orange-300'
+    };
+    return colorMap[color as keyof typeof colorMap] || colorMap.blue;
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -78,7 +142,8 @@ export function PlacementNews() {
       
       toast.success('Placement notice sent successfully');
       
-      // Reset form
+      // Reset form but keep the current tab's job type
+      const currentJobType = JOB_TYPE_TABS.find(tab => tab.id === activeTab)?.jobType || JobType.FULLTIME;
       setFormData({
         companyName: '',
         description: '',
@@ -89,13 +154,13 @@ export function PlacementNews() {
         packageAmount: '',
         packageUnit: 'LPA',
         packageFrequency: 'Yearly',
-        jobType: JobType.FULLTIME,
+        jobType: currentJobType,
         minCGPA: '',
         maxCGPA: ''
       });
     } catch (error: any) {
       console.error('Error creating notice:', error);
-      const errorMessage = error.response?.data?.message || 'Failed to send placement notice';
+      const errorMessage = error.response?.data?.message ?? 'Failed to send placement notice';
       toast.error(errorMessage);
     } finally {
       setIsLoading(false);
@@ -149,10 +214,47 @@ export function PlacementNews() {
   };
 
   return (
-    <div className="bg-white shadow rounded-lg p-6">
-      <h2 className="text-2xl font-bold text-gray-900 mb-6">Send Placement Notice</h2>
+    <div className="bg-white shadow rounded-lg">
+      {/* Header */}
+      <div className="px-6 py-4 border-b border-gray-200">
+        <h2 className="text-2xl font-bold text-gray-900">Send Placement Notice</h2>
+        <p className="text-sm text-gray-600 mt-1">Create and send placement opportunities to students</p>
+      </div>
+
+      {/* Tab Navigation */}
+      <div className="px-6 py-4 border-b border-gray-200">
+        <nav className="flex space-x-2" aria-label="Job Type Tabs">
+          {JOB_TYPE_TABS.map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => handleTabChange(tab.id)}
+                className={`flex items-center px-4 py-2 text-sm font-medium rounded-lg border transition-colors duration-200 ${getTabColorClasses(tab.color, isActive)}`}
+                type="button"
+              >
+                <Icon className="h-4 w-4 mr-2" />
+                {tab.label}
+              </button>
+            );
+          })}
+        </nav>
+      </div>
+
+      {/* Tab Content */}
+      <div className="px-6 py-6">
+        {/* Current Tab Description */}
+        <div className="mb-6 p-4 bg-gray-50 rounded-lg border">
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">
+            {JOB_TYPE_TABS.find(tab => tab.id === activeTab)?.label}
+          </h3>
+          <p className="text-gray-600">
+            {JOB_TYPE_TABS.find(tab => tab.id === activeTab)?.description}
+          </p>
+        </div>
       
-      <form onSubmit={handleSubmit} className="space-y-6">
+        <form onSubmit={handleSubmit} className="space-y-6">
         <div>
           <label className="block text-sm font-medium text-gray-700">Company Name</label>
           <Input
@@ -209,22 +311,6 @@ export function PlacementNews() {
           <p className="mt-1 text-xs text-gray-500">
             Example: 8.5 LPA or 40K Monthly
           </p>
-        </div>
-          
-        <div>
-          <label className="block text-sm font-medium text-gray-700">Job Type</label>
-          <select
-            value={formData.jobType}
-            onChange={(e) => setFormData(prev => ({ ...prev, jobType: e.target.value as JobType }))}
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-            disabled={isLoading}
-          >
-            {JOB_TYPES.map((type) => (
-              <option key={type} value={type}>
-                {type}
-              </option>
-            ))}
-          </select>
         </div>
 
         <div>
@@ -313,7 +399,7 @@ export function PlacementNews() {
             <div className="mb-3 p-2 bg-gray-50 rounded-md">
               <p className="text-sm text-gray-700 mb-1">Selected semesters:</p>
               <div className="flex flex-wrap gap-1">
-                {formData.targetSemesters
+                {[...formData.targetSemesters]
                   .sort((a, b) => a - b)
                   .map(semester => (
                     <span 
@@ -437,7 +523,8 @@ export function PlacementNews() {
         <Button type="submit" className="w-full" disabled={isLoading}>
           {isLoading ? 'Sending Notice...' : 'Send Notice'}
         </Button>
-      </form>
+        </form>
+      </div>
     </div>
   );
 }
