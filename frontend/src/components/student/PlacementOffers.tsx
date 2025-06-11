@@ -1,443 +1,197 @@
-import { useState } from 'react';
-import { Button } from '../ui/Button';
-import { Input } from '../ui/Input';
-import { BRANCHES, Branch, JOB_TYPES, JobType } from '../../types';
-import toast from 'react-hot-toast';
+import { useEffect, useState } from 'react';
+import { ExternalLink, Loader, Briefcase, DollarSign } from 'lucide-react';
 import { noticeAPI } from '../../lib/api';
-import { Check, X } from 'lucide-react';
+import { Notice } from '../../types';
+import toast from 'react-hot-toast';
+import { useAuth } from '../../context/AuthContext';
 
-// Package unit and frequency options
-const PACKAGE_UNITS = ['LPA', 'K'];
-const PACKAGE_FREQUENCIES = ['Monthly', 'Yearly'];
-
-// All available semesters
-const ALL_SEMESTERS = [1, 2, 3, 4, 5, 6, 7, 8];
-
-export function PlacementNews() {
-  const [isLoading, setIsLoading] = useState(false);
-  const [formData, setFormData] = useState({
-    companyName: '',
-    description: '',
-    link: '',
-    targetSemesters: [] as number[],
-    targetBranches: [] as Branch[],
-    targetYear: new Date().getFullYear(),
-    packageAmount: '',
-    packageUnit: 'LPA',
-    packageFrequency: 'Yearly',
-    jobType: JobType.FULLTIME,
-    minCGPA: '',
-    maxCGPA: ''
+export function PlacementOffers() {
+  const { user } = useAuth(); // Get user directly from auth context
+  const [isLoading, setIsLoading] = useState(true);
+  const [notices, setNotices] = useState<Notice[]>([]);
+  const [userPlacementStatus, setUserPlacementStatus] = useState<{
+    isPlaced: boolean;
+    placedCompany: string | null;
+  }>({
+    isPlaced: false,
+    placedCompany: null
   });
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [debugInfo, setDebugInfo] = useState<{
+    user: any;
+    responseMessage: string;
+  }>({ user: null, responseMessage: '' });
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (!formData.companyName || !formData.description || !formData.link || !formData.packageAmount) {
-      toast.error('Please fill in all required fields');
-      return;
-    }
+  useEffect(() => {
+    const fetchNotices = async () => {
+      try {
+        // Set placement status from auth context
+        if (user) {
+          setUserPlacementStatus({
+            isPlaced: user.placementStatus === 'Placed',
+            placedCompany: user.placedCompany || null
+          });
+          
+          // Capture user data for debugging
+          setDebugInfo(prev => ({
+            ...prev,
+            user: {
+              semester: user.semester,
+              branch: user.branch,
+              year: user.year
+            }
+          }));
+        } else {
+          setErrorMessage('User information not found');
+          return;
+        }
+        
+        // Fetch notices from backend
+        const response = await noticeAPI.getStudentNotices();
+        setNotices(response.data.notices || []);
+        
+        // Save response message for debugging
+        if (response.data.message) {
+          setErrorMessage(response.data.message);
+          setDebugInfo(prev => ({
+            ...prev,
+            responseMessage: response.data.message ?? ''
+          }));
+        }
+      } catch (error: any) {
+        console.error('Error fetching notices:', error);
+        toast.error('Failed to load placement offers');
+        setErrorMessage('Failed to load placement offers');
+      } finally {
+        setIsLoading(false);
+      }
+    };
 
-    if (formData.targetSemesters.length === 0 || formData.targetBranches.length === 0) {
-      toast.error('Please select target semesters and branches');
-      return;
-    }
+    fetchNotices();
+  }, [user]);
 
-    // Validate CGPA range
-    const minCgpaNum = parseFloat(formData.minCGPA);
-    const maxCgpaNum = parseFloat(formData.maxCGPA);
+  if (isLoading) {
+    return (
+      <div className="bg-white shadow rounded-lg p-6">
+        <div className="flex justify-center items-center h-64">
+          <Loader className="h-8 w-8 animate-spin text-blue-600" />
+        </div>
+      </div>
+    );
+  }
 
-    if ((formData.minCGPA && (isNaN(minCgpaNum) || minCgpaNum < 0 || minCgpaNum > 10)) ||
-        (formData.maxCGPA && (isNaN(maxCgpaNum) || maxCgpaNum < 0 || maxCgpaNum > 10)) ||
-        (formData.minCGPA && formData.maxCGPA && minCgpaNum > maxCgpaNum)) {
-      toast.error('Invalid CGPA range. Values must be between 0 and 10, and Min cannot exceed Max.');
-      return;
-    }
-
-    // Format the package string based on user inputs
-    const packageOffered = `${formData.packageAmount} ${formData.packageUnit} ${
-      formData.packageUnit === 'K' ? formData.packageFrequency : ''
-    }`.trim();
-
-    setIsLoading(true);
-    
-    try {
-      // Call backend API to create notice
-      await noticeAPI.createNotice({
-        companyName: formData.companyName,
-        description: formData.description,
-        link: formData.link,
-        targetSemesters: formData.targetSemesters,
-        targetBranches: formData.targetBranches,
-        targetYear: formData.targetYear,
-        packageOffered: packageOffered,
-        jobType: formData.jobType,
-        minCGPA: formData.minCGPA ? minCgpaNum : undefined,
-        maxCGPA: formData.maxCGPA ? maxCgpaNum : undefined
-      });
-      
-      toast.success('Placement notice sent successfully');
-      
-      // Reset form
-      setFormData({
-        companyName: '',
-        description: '',
-        link: '',
-        targetSemesters: [],
-        targetBranches: [],
-        targetYear: new Date().getFullYear(),
-        packageAmount: '',
-        packageUnit: 'LPA',
-        packageFrequency: 'Yearly',
-        jobType: JobType.FULLTIME,
-        minCGPA: '',
-        maxCGPA: ''
-      });
-    } catch (error: any) {
-      console.error('Error creating notice:', error);
-      const errorMessage = error.response?.data?.message || 'Failed to send placement notice';
-      toast.error(errorMessage);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleSemesterToggle = (semester: number) => {
-    setFormData(prev => ({
-      ...prev,
-      targetSemesters: prev.targetSemesters.includes(semester)
-        ? prev.targetSemesters.filter(s => s !== semester)
-        : [...prev.targetSemesters, semester],
-    }));
-  };
-
-  const handleBranchToggle = (branch: Branch) => {
-    setFormData(prev => ({
-      ...prev,
-      targetBranches: prev.targetBranches.includes(branch)
-        ? prev.targetBranches.filter(b => b !== branch)
-        : [...prev.targetBranches, branch],
-    }));
-  };
-
-  const selectAllSemesters = () => {
-    setFormData(prev => ({
-      ...prev,
-      targetSemesters: [...ALL_SEMESTERS]
-    }));
-  };
-
-  const clearAllSemesters = () => {
-    setFormData(prev => ({
-      ...prev,
-      targetSemesters: []
-    }));
-  };
-
-  const selectAllBranches = () => {
-    setFormData(prev => ({
-      ...prev,
-      targetBranches: [...BRANCHES as Branch[]]
-    }));
-  };
-
-  const clearAllBranches = () => {
-    setFormData(prev => ({
-      ...prev,
-      targetBranches: []
-    }));
-  };
+  if (userPlacementStatus.isPlaced) {
+    return (
+      <div className="bg-white shadow rounded-lg p-6">
+        <div className="bg-blue-50 border border-blue-200 rounded-md p-4 mb-6">
+          <p className="text-blue-700">
+            You are already placed in {userPlacementStatus.placedCompany}. No further applications allowed.
+          </p>
+        </div>
+        
+        <div className="space-y-6 opacity-50 pointer-events-none">
+          {notices.map((notice) => (
+            <PlacementNoticeCard key={notice._id} notice={notice} disabled />
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-white shadow rounded-lg p-6">
-      <h2 className="text-2xl font-bold text-gray-900 mb-6">Send Placement Notice</h2>
+      {errorMessage && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4 mb-6">
+          <p className="text-yellow-700">{errorMessage}</p>
+        </div>
+      )}
       
-      <form onSubmit={handleSubmit} className="space-y-6">
+      {notices.length === 0 && !errorMessage ? (
         <div>
-          <label className="block text-sm font-medium text-gray-700">Company Name</label>
-          <Input
-            value={formData.companyName}
-            onChange={(e) => setFormData(prev => ({ ...prev, companyName: e.target.value }))}
-            required
-            disabled={isLoading}
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Package Offered</label>
-          <div className="grid grid-cols-5 gap-4">
-            <div className="col-span-2">
-              <Input
-                type="text"
-                placeholder="Amount"
-                value={formData.packageAmount}
-                onChange={(e) => setFormData(prev => ({
-                  ...prev,
-                  packageAmount: e.target.value.replace(/[^\d.-]/g, '') // Only allow numbers, dots and dashes
-                }))}
-                required
-                disabled={isLoading}
-              />
-            </div>
-            
-            <div className="col-span-1">
-              <select
-                value={formData.packageUnit}
-                onChange={(e) => setFormData(prev => ({ ...prev, packageUnit: e.target.value }))}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-                disabled={isLoading}
-              >
-                {PACKAGE_UNITS.map(unit => (
-                  <option key={unit} value={unit}>{unit}</option>
-                ))}
-              </select>
-            </div>
-            
-            <div className="col-span-2">
-              <select
-                value={formData.packageFrequency}
-                onChange={(e) => setFormData(prev => ({ ...prev, packageFrequency: e.target.value }))}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-                disabled={isLoading || formData.packageUnit === 'LPA'}
-              >
-                {PACKAGE_FREQUENCIES.map(frequency => (
-                  <option key={frequency} value={frequency}>{frequency}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-          <p className="mt-1 text-xs text-gray-500">
-            Example: 8.5 LPA or 40K Monthly
-          </p>
-        </div>
-          
-        <div>
-          <label className="block text-sm font-medium text-gray-700">Job Type</label>
-          <select
-            value={formData.jobType}
-            onChange={(e) => setFormData(prev => ({ ...prev, jobType: e.target.value as JobType }))}
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-            disabled={isLoading}
-          >
-            {JOB_TYPES.map((type) => (
-              <option key={type} value={type}>
-                {type}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">CGPA Criteria (Optional)</label>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Input
-                type="text"
-                placeholder="Min CGPA (e.g., 6.5)"
-                value={formData.minCGPA}
-                onChange={(e) => setFormData(prev => ({
-                  ...prev,
-                  minCGPA: e.target.value.replace(/[^\d.]/g, '') // Allow only numbers and dot
-                }))}
-                disabled={isLoading}
-              />
-            </div>
-            <div>
-              <Input
-                type="text"
-                placeholder="Max CGPA (e.g., 8.0)"
-                value={formData.maxCGPA}
-                onChange={(e) => setFormData(prev => ({
-                  ...prev,
-                  maxCGPA: e.target.value.replace(/[^\d.]/g, '') // Allow only numbers and dot
-                }))}
-                disabled={isLoading}
-              />
-            </div>
-          </div>
-          <p className="mt-1 text-xs text-gray-500">
-            Leave blank if no specific CGPA range is required.
-          </p>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700">Description</label>
-          <textarea
-            value={formData.description}
-            onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
-            rows={4}
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-            required
-            disabled={isLoading}
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700">Apply/Test Link</label>
-          <Input
-            type="url"
-            value={formData.link}
-            onChange={(e) => setFormData(prev => ({ ...prev, link: e.target.value }))}
-            required
-            disabled={isLoading}
-          />
-        </div>
-
-        <div className="border rounded-lg p-4">
-          <div className="flex justify-between items-center mb-3">
-            <label className="block text-sm font-medium text-gray-700">
-              Target Semesters <span className="text-blue-600">({formData.targetSemesters.length} selected)</span>
-            </label>
-            <div className="flex gap-2">
-              <Button 
-                type="button" 
-                size="sm" 
-                onClick={selectAllSemesters} 
-                disabled={isLoading || formData.targetSemesters.length === ALL_SEMESTERS.length}
-              >
-                Select All
-              </Button>
-              <Button 
-                type="button" 
-                size="sm" 
-                variant="outline" 
-                onClick={clearAllSemesters} 
-                disabled={isLoading || formData.targetSemesters.length === 0}
-              >
-                Clear All
-              </Button>
-            </div>
+          <div className="text-center py-12">
+            <p className="text-gray-500">No placement offers available for your profile at the moment.</p>
           </div>
           
-          {formData.targetSemesters.length > 0 && (
-            <div className="mb-3 p-2 bg-gray-50 rounded-md">
-              <p className="text-sm text-gray-700 mb-1">Selected semesters:</p>
-              <div className="flex flex-wrap gap-1">
-                {formData.targetSemesters
-                  .sort((a, b) => a - b)
-                  .map(semester => (
-                    <span 
-                      key={semester} 
-                      className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
-                    >
-                      Sem {semester}
-                      <X 
-                        className="h-3 w-3 ml-1 cursor-pointer" 
-                        onClick={() => handleSemesterToggle(semester)} 
-                      />
-                    </span>
-                  ))
-                }
-              </div>
+          {/* Debugging information, only visible in development */}
+          {process.env.NODE_ENV === 'development' && (
+            <div className="mt-8 border-t pt-4">
+              <details>
+                <summary className="text-sm text-gray-500 cursor-pointer">Debug Information</summary>
+                <div className="mt-2 p-4 bg-gray-100 rounded text-xs">
+                  <h4 className="font-medium mb-2">User Profile:</h4>
+                  <pre>{JSON.stringify(debugInfo.user, null, 2)}</pre>
+                  
+                  <h4 className="font-medium mt-4 mb-2">Response Message:</h4>
+                  <pre>{debugInfo.responseMessage || 'No message'}</pre>
+                </div>
+              </details>
             </div>
           )}
-          
-          <div className="flex flex-wrap gap-2">
-            {ALL_SEMESTERS.map((semester) => (
-              <Button
-                key={semester}
-                type="button"
-                variant={formData.targetSemesters.includes(semester) ? 'primary' : 'outline'}
-                size="sm"
-                onClick={() => handleSemesterToggle(semester)}
-                disabled={isLoading}
-                className={formData.targetSemesters.includes(semester) ? 'relative' : ''}
-              >
-                Sem {semester}
-                {formData.targetSemesters.includes(semester) && (
-                  <Check className="h-3 w-3 absolute top-1 right-1" />
-                )}
-              </Button>
-            ))}
-          </div>
         </div>
-
-        <div className="border rounded-lg p-4">
-          <div className="flex justify-between items-center mb-3">
-            <label className="block text-sm font-medium text-gray-700">
-              Target Branches <span className="text-blue-600">({formData.targetBranches.length} selected)</span>
-            </label>
-            <div className="flex gap-2">
-              <Button 
-                type="button" 
-                size="sm" 
-                onClick={selectAllBranches} 
-                disabled={isLoading || formData.targetBranches.length === BRANCHES.length}
-              >
-                Select All
-              </Button>
-              <Button 
-                type="button" 
-                size="sm" 
-                variant="outline" 
-                onClick={clearAllBranches} 
-                disabled={isLoading || formData.targetBranches.length === 0}
-              >
-                Clear All
-              </Button>
-            </div>
-          </div>
-          
-          {formData.targetBranches.length > 0 && (
-            <div className="mb-3 p-2 bg-gray-50 rounded-md">
-              <p className="text-sm text-gray-700 mb-1">Selected branches:</p>
-              <div className="flex flex-wrap gap-1">
-                {formData.targetBranches.map(branch => (
-                  <span 
-                    key={branch} 
-                    className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
-                  >
-                    {branch}
-                    <X 
-                      className="h-3 w-3 ml-1 cursor-pointer" 
-                      onClick={() => handleBranchToggle(branch)} 
-                    />
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-          
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
-            {BRANCHES.map((branch) => (
-              <Button
-                key={branch}
-                type="button"
-                variant={formData.targetBranches.includes(branch as Branch) ? 'primary' : 'outline'}
-                size="sm"
-                onClick={() => handleBranchToggle(branch as Branch)}
-                disabled={isLoading}
-                className={formData.targetBranches.includes(branch as Branch) ? 'relative' : ''}
-              >
-                {branch}
-                {formData.targetBranches.includes(branch as Branch) && (
-                  <Check className="h-3 w-3 absolute top-1 right-1" />
-                )}
-              </Button>
-            ))}
-          </div>
+      ) : (
+        <div className="space-y-6">
+          {notices.map((notice) => (
+            <PlacementNoticeCard key={notice._id} notice={notice} />
+          ))}
         </div>
+      )}
+    </div>
+  );
+}
 
+function PlacementNoticeCard({ notice, disabled = false }: { notice: Notice; disabled?: boolean }) {
+  return (
+    <div className="border rounded-lg p-4">
+      <div className="flex justify-between items-start">
         <div>
-          <label className="block text-sm font-medium text-gray-700">Target Year</label>
-          <select
-            value={formData.targetYear}
-            onChange={(e) => setFormData(prev => ({ ...prev, targetYear: parseInt(e.target.value) }))}
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-            disabled={isLoading}
-          >
-            {[2022, 2023, 2024, 2025, 2026].map((year) => (
-              <option key={year} value={year}>
-                {year}
-              </option>
-            ))}
-          </select>
+          <h3 className="text-lg font-medium text-gray-900">{notice.companyName}</h3>
+          <p className="mt-1 text-sm text-gray-500">
+            Posted {new Date(notice.createdAt).toLocaleDateString()}
+          </p>
         </div>
+        <a 
+          href={notice.link}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={`inline-flex items-center justify-center rounded-md px-4 h-10 font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 ${
+            disabled 
+              ? 'bg-blue-600 text-white opacity-50 pointer-events-none' 
+              : 'bg-blue-600 text-white hover:bg-blue-700'
+          }`}
+        >
+          Apply Now
+          <ExternalLink className="ml-2 h-4 w-4" />
+        </a>
+      </div>
 
-        <Button type="submit" className="w-full" disabled={isLoading}>
-          {isLoading ? 'Sending Notice...' : 'Send Notice'}
-        </Button>
-      </form>
+      <div className="mt-3 flex space-x-4">
+        <div className="flex items-center text-green-600">
+          <DollarSign className="h-4 w-4 mr-1" />
+          <span className="text-sm font-medium">{notice.packageOffered}</span>
+        </div>
+        <div className="flex items-center text-blue-600">
+          <Briefcase className="h-4 w-4 mr-1" />
+          <span className="text-sm font-medium">{notice.jobType}</span>
+        </div>
+      </div>
+      
+      <p className="mt-3 text-gray-700">{notice.description}</p>
+      
+      <div className="mt-3 flex flex-wrap gap-2">
+        {Array.isArray(notice.targetBranches) && notice.targetBranches.map((branch) => (
+          <span
+            key={branch}
+            className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
+          >
+            {branch}
+          </span>
+        ))}
+        {Array.isArray(notice.targetSemesters) && (
+          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+            Sem {notice.targetSemesters.join(', ')}
+          </span>
+        )}
+      </div>
     </div>
   );
 }
