@@ -37,12 +37,12 @@ export default function Login() {
         toast.success('Welcome Admin!');
         navigate('/admin');
       } else {
-        toast.success(`Welcome ${response.data.user.usn}!`);
+        toast.success(`Welcome ${response.data.user.name ?? response.data.user.usn}!`);
         navigate('/student');
       }
     } catch (error: any) {
       console.error('Login error:', error);
-      const errorMessage = error.response?.data?.message || 'Invalid credentials';
+      const errorMessage = error.response?.data?.message ?? 'Invalid credentials';
       toast.error(errorMessage);
     } finally {
       setIsLoading(false);

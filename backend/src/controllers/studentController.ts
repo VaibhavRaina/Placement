@@ -223,7 +223,7 @@ export const updateStudentProfile = async (req: Request, res: Response): Promise
     }
 
     // Validate CGPA if provided
-    if (cgpa !== undefined) {
+    if (cgpa !== undefined && cgpa !== null && cgpa !== '') {
       const cgpaNum = parseFloat(String(cgpa));
       if (isNaN(cgpaNum) || cgpaNum < 0 || cgpaNum > 10) {
         res.status(400).json({
@@ -234,17 +234,19 @@ export const updateStudentProfile = async (req: Request, res: Response): Promise
       }
     }
 
+    // Prepare update object
+    const updateObject: any = {};
+    if (name) updateObject.name = name;
+    if (semester) updateObject.semester = parseInt(String(semester));
+    if (cgpa !== undefined && cgpa !== null && cgpa !== '') {
+      updateObject.cgpa = parseFloat(String(cgpa));
+    }
+    if (dob) updateObject.dob = new Date(dob);
+
     // Update student profile
     const updatedStudent = await User.findByIdAndUpdate(
       student._id,
-      {
-        $set: {
-          ...(name && { name }),
-          ...(semester && { semester: parseInt(String(semester)) }),
-          ...(cgpa && { cgpa: parseFloat(String(cgpa)) }),
-          ...(dob && { dob: new Date(dob) })
-        }
-      },
+      { $set: updateObject },
       { new: true, runValidators: true }
     ).select('-password');
 

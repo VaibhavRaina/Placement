@@ -31,7 +31,27 @@ api.interceptors.request.use(
     return config;
   },
   (error) => {
-    return Promise.reject(error);
+    return Promise.reject(error instanceof Error ? error : new Error(String(error)));
+  }
+);
+
+// Add response interceptor to handle token expiration
+api.interceptors.response.use(
+  (response) => {
+    return response;
+  },
+  (error) => {
+    // If we get a 401 and we're not on the login page, redirect to login
+    if (error.response?.status === 401) {
+      const currentPath = window.location.pathname;
+      if (currentPath !== '/login' && currentPath !== '/' && currentPath !== '/register') {
+        localStorage.removeItem('user');
+        localStorage.removeItem('token');
+        window.location.href = '/login';
+        return Promise.reject(error instanceof Error ? error : new Error(String(error)));
+      }
+    }
+    return Promise.reject(error instanceof Error ? error : new Error(String(error)));
   }
 );
 

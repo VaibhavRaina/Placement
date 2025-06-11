@@ -7,7 +7,6 @@ import { validateUSN, validateEmail } from '../lib/utils';
 import { BRANCHES, Branch } from '../types';
 import toast from 'react-hot-toast';
 import { authAPI } from '../lib/api';
-import { useAuth } from '../context/AuthContext';
 
 interface FormData {
   name: string;
@@ -32,7 +31,6 @@ interface FormErrors {
 
 export default function Register() {
   const navigate = useNavigate();
-  const { login } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
   const [formData, setFormData] = useState<FormData>({
     name: '',
@@ -101,7 +99,7 @@ export default function Register() {
     
     try {
       // Call backend API to register user
-      const response = await authAPI.register({
+      await authAPI.register({
         name: formData.name.trim(),
         dob: formData.dob,
         usn: formData.usn.toUpperCase(),
@@ -111,14 +109,11 @@ export default function Register() {
         branch: formData.branch as Branch
       });
       
-      // Use login from AuthContext
-      login(response.data.user, response.data.token);
-      
-      toast.success('Registration successful!');
-      navigate('/student'); // Redirect to student dashboard
+      toast.success('Registration successful! Please login to continue.');
+      navigate('/login'); // Redirect to login page after registration
     } catch (error: any) {
       console.error('Registration error:', error);
-      const errorMessage = error.response?.data?.message || 'Registration failed. Please try again.';
+      const errorMessage = error.response?.data?.message ?? 'Registration failed. Please try again.';
       toast.error(errorMessage);
     } finally {
       setIsLoading(false);

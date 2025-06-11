@@ -86,7 +86,8 @@ export const registerStudent = async (req: Request, res: Response): Promise<void
 
       res.status(201).json({
         success: true,
-        user: {          id: student._id,
+        user: {
+          id: student._id,
           name: student.name,
           dob: student.dob,
           usn: student.usn,
@@ -179,12 +180,15 @@ export const loginUser = async (req: Request, res: Response): Promise<void> => {
           success: true,
           user: {
             id: student._id,
+            name: student.name,
             usn: student.usn,
             email: student.email,
             role: student.role,
             semester: student.semester,
             branch: student.branch,
             year: student.year,
+            dob: student.dob,
+            cgpa: student.cgpa,
             placementStatus: student.placementStatus,
             placedCompany: student.placedCompany,
           },
@@ -256,12 +260,15 @@ export const getCurrentUser = async (req: Request, res: Response): Promise<void>
         success: true,
         user: {
           id: user._id,
+          name: user.name,
           usn: user.usn,
           email: user.email,
           role: user.role,
           semester: user.semester,
           branch: user.branch,
           year: user.year,
+          dob: user.dob,
+          cgpa: user.cgpa,
           placementStatus: user.placementStatus,
           placedCompany: user.placedCompany,
         },

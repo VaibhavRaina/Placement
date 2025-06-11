@@ -25,30 +25,44 @@ export default function Profile() {
   });
 
   useEffect(() => {
-    const fetchProfile = async () => {
-      try {
-        const response = await authAPI.getCurrentUser();
-        const userData = response.data.user ?? null;
-        
-        // Initialize form data with current values
-        if (userData) {
-          setProfileFormData({
-            name: userData.name || '',
-            dob: userData.dob || '',
-            semester: userData.semester?.toString() || '',
-            cgpa: userData.cgpa?.toString() || '',
-          });
-        }
-      } catch (error) {
-        console.error('Error fetching profile:', error);
-        toast.error('Failed to load profile');
-      } finally {
+    const initializeProfile = () => {
+      if (authUser) {
+        setProfileFormData({
+          name: authUser.name ?? '',
+          dob: authUser.dob ?? '',
+          semester: authUser.semester?.toString() ?? '',
+          cgpa: authUser.cgpa !== undefined && authUser.cgpa !== null ? authUser.cgpa.toString() : '',
+        });
         setIsLoading(false);
+      } else {
+        // If no user in context, try to fetch from API
+        const fetchProfile = async () => {
+          try {
+            const response = await authAPI.getCurrentUser();
+            const userData = response.data.user ?? null;
+            
+            if (userData) {
+              setProfileFormData({
+                name: userData.name ?? '',
+                dob: userData.dob ?? '',
+                semester: userData.semester?.toString() ?? '',
+                cgpa: userData.cgpa !== undefined && userData.cgpa !== null ? userData.cgpa.toString() : '',
+              });
+            }
+          } catch (error) {
+            console.error('Error fetching profile:', error);
+            toast.error('Failed to load profile');
+          } finally {
+            setIsLoading(false);
+          }
+        };
+
+        fetchProfile();
       }
     };
 
-    fetchProfile();
-  }, []);
+    initializeProfile();
+  }, [authUser]);
 
   const handlePasswordChange = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -88,12 +102,12 @@ export default function Profile() {
         cgpa?: number;
       } = {};
       
-      if (profileFormData.name) updateData.name = profileFormData.name;
+      if (profileFormData.name.trim()) updateData.name = profileFormData.name.trim();
       if (profileFormData.semester) updateData.semester = parseInt(profileFormData.semester);
-      if (profileFormData.cgpa) updateData.cgpa = parseFloat(profileFormData.cgpa);
+      if (profileFormData.cgpa.trim()) updateData.cgpa = parseFloat(profileFormData.cgpa);
       
       const response = await studentAPI.updateStudentProfile(updateData);
-      const updatedUser = response.data.user || response.data.student;
+      const updatedUser = response.data.user ?? response.data.student;
       
       if (updatedUser) {
         updateUser(updatedUser);
@@ -101,7 +115,7 @@ export default function Profile() {
         setIsEditingProfile(false);
       }
     } catch (error: any) {
-      const errorMessage = error.response?.data?.message || 'Failed to update profile';
+      const errorMessage = error.response?.data?.message ?? 'Failed to update profile';
       toast.error(errorMessage);
     }
   };
@@ -125,6 +139,14 @@ export default function Profile() {
   return (
     <div className="bg-white shadow rounded-lg">
       <div className="p-6">
+        {/* Welcome Section */}
+        <div className="mb-6">
+          <h1 className="text-3xl font-bold text-gray-900">
+            Welcome, {authUser.name ?? authUser.usn}!
+          </h1>
+          <p className="text-gray-600 mt-2">Manage your profile and placement information</p>
+        </div>
+        
         <div className="flex justify-between items-center">
           <h2 className="text-2xl font-bold text-gray-900">Profile Information</h2>
           <Button 
@@ -216,15 +238,21 @@ export default function Profile() {
             <div>
               <label className="block text-sm font-medium text-gray-700">CGPA</label>
               <Input
-                type="number"
-                min={0}
-                max={10}
-                step={0.01}
+                type="text"
                 value={profileFormData.cgpa}
-                onChange={(e) => setProfileFormData(prev => ({
-                  ...prev,
-                  cgpa: e.target.value
-                }))}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  // Allow empty string or valid decimal numbers
+                  if (value === '' || /^\d*\.?\d*$/.test(value)) {
+                    const numValue = parseFloat(value);
+                    if (value === '' || (numValue >= 0 && numValue <= 10)) {
+                      setProfileFormData(prev => ({
+                        ...prev,
+                        cgpa: value
+                      }));
+                    }
+                  }
+                }}
                 placeholder="Enter your current CGPA (0-10)"
               />
             </div>

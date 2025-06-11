@@ -1,6 +1,7 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { User, UserRole } from '../types';
+import { authAPI } from '../lib/api';
 
 interface AuthContextType {
   user: User | null;
@@ -10,6 +11,7 @@ interface AuthContextType {
   login: (user: User, token: string) => void;
   logout: () => void;
   updateUser: (userData: Partial<User>) => void;
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -20,6 +22,7 @@ const AuthContext = createContext<AuthContextType>({
   login: () => {},
   logout: () => {},
   updateUser: () => {},
+  refreshUser: async () => {},
 });
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -54,24 +57,50 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.removeItem('token');
     navigate('/');
   };
+
+  const refreshUser = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        // No token, don't try to refresh
+        return;
+      }
+      
+      const response = await authAPI.getCurrentUser();
+      const userData = response.data.user;
+      if (userData) {
+        setUser(userData);
+        localStorage.setItem('user', JSON.stringify(userData));
+      }
+    } catch (error: any) {
+      console.error('Error refreshing user data:', error);
+      // Only logout if the error is 401 (unauthorized) or 403 (forbidden)
+      // Don't logout on network errors or other temporary issues
+      if (error.response?.status === 401 || error.response?.status === 403) {
+        logout();
+      }
+    }
+  };
+
+  const contextValue = useMemo(() => ({
+    user,
+    isAuthenticated: !!user,
+    isAdmin: user?.role === UserRole.ADMIN,
+    isLoading,
+    login,
+    logout,
+    refreshUser,
+    updateUser: (userData: Partial<User>) => {
+      if (user) {
+        const updatedUser = { ...user, ...userData };
+        setUser(updatedUser);
+        localStorage.setItem('user', JSON.stringify(updatedUser));
+      }
+    },
+  }), [user, isLoading]);
+
   return (
-    <AuthContext.Provider
-      value={{
-        user,
-        isAuthenticated: !!user,
-        isAdmin: user?.role === UserRole.ADMIN,
-        isLoading,
-        login,
-        logout,
-        updateUser: (userData) => {
-          if (user) {
-            const updatedUser = { ...user, ...userData };
-            setUser(updatedUser);
-            localStorage.setItem('user', JSON.stringify(updatedUser));
-          }
-        },
-      }}
-    >
+    <AuthContext.Provider value={contextValue}>
       {children}
     </AuthContext.Provider>
   );

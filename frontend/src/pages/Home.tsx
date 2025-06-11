@@ -1,8 +1,19 @@
 import { Link } from 'react-router-dom';
 import { GraduationCap, Users, Building, Award } from 'lucide-react';
 import { Button } from '../components/ui/Button';
+import { useAuth } from '../context/AuthContext';
+import { UserRole } from '../types';
 
 export default function Home() {
+  const { isAuthenticated, user } = useAuth();
+
+  const getStartedLink = () => {
+    if (isAuthenticated && user) {
+      return user.role === UserRole.ADMIN ? '/admin' : '/student';
+    }
+    return '/register';
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Hero Section */}
@@ -24,16 +35,18 @@ export default function Home() {
               Your gateway to career opportunities. Connect with top companies and kickstart your professional journey.
             </p>
             <div className="mt-10 flex justify-center space-x-4">
-              <Link to="/register">
+              <Link to={getStartedLink()}>
                 <Button size="lg" className="font-semibold">
                   Get Started
                 </Button>
               </Link>
-              <Link to="/login">
-                <Button size="lg" variant="outline" className="font-semibold text-white border-white hover:bg-white hover:text-blue-600">
-                  Sign In
-                </Button>
-              </Link>
+              {!isAuthenticated && (
+                <Link to="/login">
+                  <Button size="lg" variant="outline" className="font-semibold text-white border-white hover:bg-white hover:text-blue-600">
+                    Sign In
+                  </Button>
+                </Link>
+              )}
             </div>
           </div>
         </div>

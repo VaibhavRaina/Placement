@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { User, BellPlus, BarChart, Search, Home, LogOut } from 'lucide-react';
+import { User, BellPlus, BarChart, Search, LogOut } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { useAuth } from '../../context/AuthContext';
 
@@ -36,13 +36,6 @@ export function AdminNavbar() {
             ))}
           </div>
           <div className="flex items-center space-x-4">
-            <Link
-              to="/"
-              className="inline-flex items-center px-4 py-2 text-sm font-medium text-gray-500 hover:text-gray-700 hover:bg-gray-50 rounded-md"
-            >
-              <Home className="h-5 w-5 mr-2" />
-              Home
-            </Link>
             <button
               onClick={logout}
               className="inline-flex items-center px-4 py-2 text-sm font-medium text-red-600 hover:text-red-700 hover:bg-red-50 rounded-md"
